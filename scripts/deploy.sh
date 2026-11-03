@@ -48,6 +48,8 @@ else
   "${compose[@]}" pull app migration-runner
 fi
 "${compose[@]}" run --rm --no-deps migration-runner
+# Contingência separada da instância que hospeda os seeds, com as mesmas sessões/grants.
+P2P_SEED_ENABLED=false APP_PORT=3004 APP_SLOT=fallback docker compose --env-file /opt/highpass/.env -p highpass-fallback -f docker-compose.prod.yml up -d --remove-orphans --no-deps --wait --wait-timeout 90 app
 "${compose[@]}" up -d --remove-orphans --no-deps --wait --wait-timeout 90 app
 curl --fail --silent --show-error --max-time 8 "http://127.0.0.1:$APP_PORT/health/ready"
 sudo -n /usr/local/sbin/highpass-switch "$APP_PORT"
@@ -55,7 +57,8 @@ switched=true
 verified=false
 for ((attempt=0; attempt<20; attempt++)); do
   headers=$(curl --fail --silent --show-error --max-time 8 -D - http://127.0.0.1:8080/health/ready) || headers=''
-  if [[ "$headers" == *"127.0.0.1:$APP_PORT"* ]]; then verified=true; break; fi
+  upstream=$(awk 'tolower($1)=="x-highpass-upstream:" {gsub("\r", "", $2); print $2}' <<< "$headers")
+  if [[ "$upstream" == "127.0.0.1:$APP_PORT" ]]; then verified=true; break; fi
   sleep 1
 done
 [[ "$verified" == true ]]

@@ -47,9 +47,9 @@ Antes do primeiro byte: **0% HTTP / 0% P2P**. Os valores derivam dos eventos ofi
 
 Web usa `P2PVideoPlayer.tsx` e `p2p/stats.ts`; Android recebe o mesmo snapshot da ponte. Reprodução nativa/HTTP consulta `/api/iptv/traffic/:grant`, com sessão proprietária obrigatória. Roku consulta esse endpoint a cada três segundos; quando há gateway ativo, a resposta identifica `scope=gateway-to-swarm`. Não são inventados peers ou economia quando não há WebRTC.
 
-A prioridade P2P configura uma espera inicial de 1.200ms, janela de urgência de 2s, janela HTTP de 8s, prefetch P2P de 120s e um download HTTP simultâneo por Core. HTTP atende ausência de peers/segmentos ou prazos de reprodução. Manifests e metadados continuam sendo bootstrap HTTP. Esses parâmetros são uma política inicial de fallback, não uma garantia de economia de banda.
+Com a política de produção, o HTTP de segmentos fica fechado inicialmente. Cada segmento tem prazo P2P de 3s; a falha abre uma janela HTTP de 5s, com retorno automático às tentativas P2P. O seed de infraestrutura aquece o conteúdo ativo sem depender de um segundo espectador. O prefetch P2P é de 120s, com no máximo um download HTTP simultâneo durante contingência. Manifests e metadados continuam sendo bootstrap HTTP. Esses parâmetros são uma política inicial de fallback, não uma garantia de economia de banda.
 
-URLs de segmentos usam AES-SIV, com chave derivada por grant e autenticação. Assim permanecem estáveis nas atualizações de playlist e entre slots, sem reutilizar um nonce GCM com mensagens diferentes ou revelar senha na URL. Sessões e tokens de origem continuam usando AES-256-GCM com nonce aleatório. Testes verificam estabilidade, adulteração e isolamento por grant.
+URLs de segmentos usam AES-SIV, com chave derivada por grant e autenticação. Mapeamentos Redis por sequência tornam as URLs estáveis mesmo quando o XUI renova assinaturas para o mesmo segmento. Assim permanecem estáveis nas atualizações de playlist e entre slots, sem reutilizar um nonce GCM com mensagens diferentes ou revelar senha na URL. Sessões e tokens de origem continuam usando AES-256-GCM com nonce aleatório. Testes verificam estabilidade, adulteração e isolamento por grant.
 
 ## 4. VOD e limites operacionais
 
@@ -57,7 +57,7 @@ Arquivos VOD são remuxados sob demanda em HLS MPEG-TS com `ffmpeg -c copy`. Nã
 
 Limites por processo: quatro preparações VOD/cache ativos, até 2 GiB por preparação e expiração após 30min sem uso; quatro sessões de gateway (`P2P_RELAY_MAX_SESSIONS`), até quatro pedidos por sessão e 16 MiB por segmento na ponte. O gateway fecha sessões ociosas após 90s. O cache fica em volume próprio de cada slot e é limpo ao iniciar. Quando o remux falha ou atinge o limite, os clientes tentam o arquivo original pelo proxy autenticado da engine, preservando a posição e os contadores acumulados. O fallback nunca inclui usuário/senha XUI na URL do cliente. Esses valores precisam ser dimensionados para a carga; o gateway Chromium tem custo maior que um peer no cliente.
 
-Produção usa app com limite de 1.536 MiB e 2 CPUs, tmpfs de 256 MiB e volume VOD gravável, mantendo o restante do filesystem somente leitura. PostgreSQL/Redis e monitoramento estão em rede interna; apenas Nginx publica 80/443. Não há alta disponibilidade de banco/Redis no mesmo host. STUN está configurado; TURN próprio continua necessário em redes que exigem relay.
+Produção usa app com limite de 3.072 MiB e 4 CPUs, tmpfs de 256 MiB e volume VOD gravável, mantendo o restante do filesystem somente leitura. PostgreSQL/Redis e monitoramento estão em rede interna; apenas Nginx publica 80/443. Não há alta disponibilidade de banco/Redis no mesmo host. STUN e coturn autenticado estão configurados, incluindo TURN sobre UDP e TLS para redes que exigem relay.
 
 ## 5. Pacotes, CI e implantação
 

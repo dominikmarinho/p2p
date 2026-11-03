@@ -1,7 +1,7 @@
 export type ContentKind = 'live' | 'movie' | 'series';
-export interface Account { username: string; accountId: string; expiresAt: number; maxConnections: number }
+export interface Account { username: string; accountId: string; expiresAt: number; maxConnections: number; p2pRequired?: boolean }
 export interface CatalogItem { id: string; name: string; categoryId: string; image: string; kind: ContentKind; extension: string }
-export interface Playback { url: string; directUrl?: string; statsPath?: string; trackerPath: string; swarmId: string; expiresAt: number; isLive: boolean; isHls: boolean; iceServers: RTCIceServer[]; config?: { bufferSeconds: number; maxConnectionsPerNode: number; maxUploadKbps: number; maxPeersPerChannel: number } }
+export interface Playback { url: string; directUrl?: string; statsPath?: string; telemetryPath?: string; trackerPath: string; swarmId: string; expiresAt: number; isLive: boolean; isHls: boolean; iceServers: RTCIceServer[]; delivery?: { mode: 'p2p-first'; seedPath: string; segmentTimeoutMs: number; recoveryMs: number }; config?: { bufferSeconds: number; maxConnectionsPerNode: number; maxUploadKbps: number; maxPeersPerChannel: number } }
 export interface EpgItem { title: string; description: string; start: string; end: string }
 export interface Episode { id: string; name: string; season: string; extension: string }
 

@@ -1,3 +1,4 @@
+import './patch-p2p.mjs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 

@@ -116,6 +116,9 @@ class HomeActivity : ComponentActivity() {
         if (kind == "favorites") display(values)
     }
     private fun showSettings() {
+        if (store.read()?.optJSONObject("account")?.optBoolean("p2pRequired", false) == true) {
+            AlertDialog.Builder(this).setTitle("Distribuição automática").setMessage("Canais, filmes e séries usam P2P quando há entrega disponível. HTTP mantém a reprodução durante falhas, com retorno automático ao P2P.").setPositiveButton("Concluir", null).show(); return
+        }
         AlertDialog.Builder(this).setTitle("Configurações").setMultiChoiceItems(arrayOf("Compartilhar segmentos via P2P"), booleanArrayOf(preferences.getBoolean("p2p", true))) { _, _, checked -> preferences.edit().putBoolean("p2p", checked).apply() }.setPositiveButton("Concluir", null).show()
     }
     private fun showAccount() {

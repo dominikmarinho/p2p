@@ -28,6 +28,7 @@ sub fetch()
     end if
     status = msg.GetResponseCode()
     data = ParseJson(msg.GetString())
+    if req.probe = true then data = { available: status = 200 and Left(msg.GetString().Trim(), 7) = "#EXTM3U" }
     if status >= 200 and status < 300
         m.top.result = { ok: true, data: data, path: req.path }
     else

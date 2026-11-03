@@ -22,10 +22,17 @@ const environmentSchema = z.object({
   ADMIN_BOOTSTRAP_KEY: z.string().min(32).default('local-admin-key-change-before-production'),
   CONFIG_ENCRYPTION_KEY: z.string().regex(/^[a-f0-9]{64}$/).default('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
   XUI_ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1'),
+  XUI_PRESERVE_HTTP: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   XUI_ALLOW_HTTP: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   METRICS_TOKEN: z.string().min(32).default('local-metrics-token-change-before-production'),
   CHROMIUM_PATH: z.string().default(''),
   P2P_RELAY_MAX_SESSIONS: integer(4, 32),
+  P2P_SEED_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  P2P_DELIVERY_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  P2P_SEED_MAX_STREAMS: integer(4, 16),
+  P2P_SEGMENT_TIMEOUT_MS: integer(3000, 10000),
+  TURN_URLS: z.string().default(''),
+  TURN_SHARED_SECRET: z.string().default(''),
   VOD_CACHE_DIR: z.string().default(''),
   XUI_BASE_URL: z.url().default('http://xuione.remoto.api.br'),
   PUBLIC_ENGINE_URL: z.url().default('https://p2p.remoto.api.br'),
@@ -37,6 +44,7 @@ const environmentSchema = z.object({
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(1).default(0),
   SHUTDOWN_TIMEOUT_MS: integer(20000, 120000),
 }).superRefine((env, context) => {
+  if (env.TURN_URLS && (env.TURN_SHARED_SECRET.length < 32 || env.TURN_URLS.split(',').some((url) => !/^turns?:[^\s,]+$/.test(url.trim())))) context.addIssue({ code: 'custom', path: ['TURN_URLS'], message: 'Configure URLs TURN válidas e segredo com pelo menos 32 caracteres' });
   if (env.NODE_ENV === 'production' && env.JWT_SECRET.startsWith('local-')) {
     context.addIssue({ code: 'custom', path: ['JWT_SECRET'], message: 'Use um segredo aleatório em produção' });
   }

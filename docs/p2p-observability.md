@@ -22,7 +22,7 @@ Fastify /metrics → Prometheus (15s) → Grafana provisionado
                    └→ desenvolvimento: app:3000
 ```
 
-O microsserviço implementa o plano de controle e a sinalização. Os segmentos de vídeo/dados WebRTC são responsabilidade do cliente/player e da origem; não são retransmitidos pelo servidor WS. Buffer e upload são parâmetros enviados ao player. O servidor limita efetivamente conexões por linha, peers por canal, mensagens, payloads e backpressure; limitar bytes do tráfego direto entre peers requer implementação no player ou TURN/relay próprio. Os clientes Web/Android e o tracker compatível foram acrescentados nesta entrega; veja [ecossistema](ecosystem.md). O protocolo descrito nesta seção é o plano de controle anterior; os players novos usam `/api/iptv/tracker/:grant`. TURN não é hospedado pelo projeto.
+O microsserviço implementa o plano de controle e a sinalização. Os segmentos de vídeo/dados WebRTC são responsabilidade do cliente/player e da origem; não são retransmitidos pelo servidor WS. Buffer e upload são parâmetros enviados ao player. O servidor limita efetivamente conexões por linha, peers por canal, mensagens, payloads e backpressure; limitar bytes do tráfego direto entre peers requer implementação no player ou TURN/relay próprio. Os clientes Web/Android e o tracker compatível foram acrescentados nesta entrega; veja [ecossistema](ecosystem.md). O protocolo descrito nesta seção é o plano de controle anterior; os players novos usam `/api/iptv/tracker/:grant`. A operação atual inclui coturn com credenciais temporárias; veja [seeds e monitoramento](seeds-production.md).
 
 ## 2. Arquivos e migrations
 

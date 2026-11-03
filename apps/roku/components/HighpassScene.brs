@@ -19,6 +19,7 @@ sub init()
     m.settingsP2p = true
     m.fallbackUsed = false
     m.pendingSeek = 0
+    m.recoveryTick = 0
     m.login.observeField("buttonSelected", "onLoginButton")
     m.nav.observeField("itemSelected", "onNav")
     m.catalog.observeField("itemSelected", "onItem")
@@ -106,7 +107,7 @@ sub onNav()
         showItems(m.favorites)
         m.status.text = "Favoritos · pressione * em um título para alternar"
     else if m.section = "settings"
-        showItems([{ id: "p2p", name: "Alternar gateway P2P (Roku usa HLS)", kind: "setting" }])
+        showItems([{ id: "p2p", name: "Gateway P2P automático com HTTP de contingência", kind: "setting" }])
         m.status.text = "O painel de tráfego mede gateway → swarm. Roku recebe o vídeo por HTTP."
     else if m.section = "account"
         showItems([{ id: "logout", name: "Encerrar sessão", kind: "account" }])
@@ -142,8 +143,8 @@ sub onItem()
     entry = m.items[index]
     m.selected = entry
     if entry.kind = "setting"
-        m.settingsP2p = not m.settingsP2p
-        m.status.text = "Gateway P2P: " + m.settingsP2p.toStr()
+        m.settingsP2p = true
+        m.status.text = "Gateway P2P automático com HTTP de contingência"
     else if entry.kind = "account"
         request("logout", "onLoggedOut", {})
     else if entry.kind = "series"
@@ -152,7 +153,7 @@ sub onItem()
     else
         body = { kind: entry.kind, id: entry.id }
         if entry.kind = "episode" then body.seriesId = m.seriesId
-        if m.settingsP2p then body.client = "roku"
+        body.client = "roku"
         request("playback", "onPlayback", body)
     end if
 end sub
@@ -188,7 +189,29 @@ sub onStatsTimer()
     cleanupTasks()
     if m.playback <> invalid
         request(m.playback.statsPath.mid(10), "onStats")
+        m.recoveryTick++
+        if m.fallbackUsed and m.recoveryTick mod 5 = 0
+            task = CreateObject("roSGNode", "ApiTask")
+            task.request = { path: m.playback.url.mid(10), token: m.token, probe: true }
+            task.observeField("result", "onRecoveryProbe")
+            m.tasks.push(task)
+            task.control = "RUN"
+        end if
     end if
+end sub
+sub onRecoveryProbe(event as Object)
+    result = event.getData()
+    if not m.video.visible or not m.fallbackUsed or not result.ok then return
+    if result.data = invalid or not result.data.available then return
+    m.pendingSeek = m.video.position
+    m.fallbackUsed = false
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = "https://p2p.remoto.api.br" + m.playback.url
+    content.streamFormat = "hls"
+    content.title = m.selected.name
+    content.HttpHeaders = ["Authorization: Bearer " + m.token]
+    m.video.content = content
+    m.video.control = "play"
 end sub
 sub onStats(event as Object)
     result = event.getData()

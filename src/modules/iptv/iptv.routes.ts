@@ -1,4 +1,5 @@
 import type { RokuRelay } from './roku-relay.js';
+import type { SeedManager } from './seed-manager.js';
 import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -22,7 +23,7 @@ export function clientToken(request: FastifyRequest): string {
   return token;
 }
 
-export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: RokuRelay): void {
+export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: RokuRelay, seeds: SeedManager): void {
   const router = app.withTypeProvider<ZodTypeProvider>();
   router.addHook('onRequest', (request, _reply, done) => {
     const origin = request.headers.origin;
@@ -32,6 +33,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     done();
   });
   router.addHook('onSend', async (_request, reply, payload) => { reply.header('Cache-Control', 'no-store'); return payload; });
+  seeds.routes(app);
   router.post('/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } }, schema: { body: lineCredentialsDto } }, async (request, reply) => {
     const result = await service.login(request.body);
     const secure = service.env.NODE_ENV === 'production' ? '; Secure' : '';
@@ -66,7 +68,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     const { grant, resource } = request.params;
     const permission = await service.grant(grant);
     if (digest(clientToken(request)) !== permission.sessionHash) throw new AppError(401, 'MEDIA_OWNER', 'Mídia pertence a outra sessão');
-    const upstream = service.resource(grant, resource);
+    const upstream = await service.resource(grant, resource);
     const address = app.server.address(); const base = address && typeof address !== 'string' ? `http://127.0.0.1:${address.port}` : '';
     const gateway = permission.relay && !service.isRelayRequest(request);
     if (gateway) reply.raw.setTimeout(30000);
@@ -86,7 +88,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     if (/mpegurl/i.test(contentType) || new URL(response.url || upstream.href).pathname.endsWith('.m3u8')) {
       const text = await readBounded(response, 1024 * 1024);
       if (!text.trimStart().startsWith('#EXTM3U')) throw new AppError(502, 'HLS_FORMAT', 'A origem não retornou uma playlist HLS');
-      const manifest = service.rewriteManifest(text, new URL(response.url || upstream.href), grant);
+      const manifest = await service.rewriteManifest(text, new URL(response.url || upstream.href), grant, resource);
       if (gateway) await relay.observe(grant, clientToken(request), base, request.url, manifest);
       return reply.type('application/vnd.apple.mpegurl').send(manifest);
     }

@@ -1,4 +1,6 @@
-import { Core, type Segment, type StreamProperties } from 'p2p-media-loader-core';
+import { Core, type CoreEventMap, type Segment, type StreamProperties } from 'p2p-media-loader-core';
+import { PlaybackReporter } from './telemetry.js';
+import { DeliveryPolicy } from './delivery-policy.js';
 import type { Playback } from '../api.js';
 import { absoluteUrl, trackerUrl } from '../api.js';
 import { trackStats, type P2PStats } from './stats.js';
@@ -9,12 +11,20 @@ const runtimeId = (url: string, start?: number, end?: number) => start !== undef
 export class NativeSegmentCore {
   readonly core: Core;
   private httpMode = false;
+  private readonly reporter: PlaybackReporter | undefined;
+  private wake: ReturnType<typeof setTimeout> | undefined;
   private readonly segmentTimes = new Map<string, number>();
+  private readonly playlists = new Map<string, Segment[]>();
+  private readonly policy: DeliveryPolicy | undefined;
+  private readonly downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') this.policy?.recovered(segment.runtimeId); };
   private readonly stats;
   private readonly streams = new Map<string, StreamProperties>();
-  constructor(private readonly playback: Playback, enabled: boolean, onStats: (stats: P2PStats) => void) {
-    this.core = new Core({ swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 32, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: 1200, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled });
-    this.core.setManifestResponseUrl(absoluteUrl(playback.url)); this.core.setIsLive(playback.isLive); this.stats = trackStats(this.core, onStats);
+  constructor(private readonly playback: Playback, enabled: boolean, onStats: (stats: P2PStats) => void, seeder = false) {
+    enabled = enabled || Boolean(playback.delivery);
+    this.core = new Core({ swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: seeder ? 64 : 32, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: seeder ? 0 : 1200, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled });
+    this.core.setManifestResponseUrl(absoluteUrl(playback.url)); this.core.setIsLive(playback.isLive); this.stats = trackStats(this.core, onStats); this.reporter = seeder ? undefined : new PlaybackReporter(playback, 'bridge', this.stats.snapshot);
+    this.policy = !seeder && playback.delivery && enabled ? new DeliveryPolicy(playback, (allowed) => { if (!this.httpMode) { this.core.applyDynamicConfig({ simultaneousHttpDownloads: allowed ? 1 : 0 }); for (const uri of this.playlists.keys()) this.core.updateStream(uri); if (this.wake) clearTimeout(this.wake); this.wake = setTimeout(() => { if (!this.httpMode) for (const uri of this.playlists.keys()) this.core.updateStream(uri); }, 1100); } }) : undefined;
+    this.core.addEventListener('onSegmentLoaded', this.downloaded);
   }
   observePlaylist(uri: string, text: string): void {
     if (this.httpMode) return;
@@ -49,6 +59,7 @@ export class NativeSegmentCore {
       }
     }
     const current = this.core.getStreamSegmentRuntimeIds(uri) ?? new Set<string>(); const next = new Set(segments.map((segment) => segment.runtimeId));
+    this.playlists.set(uri, segments);
     for (const segment of segments) this.segmentTimes.set(segment.runtimeId, segment.startTime);
     for (const id of current) if (!next.has(id)) this.segmentTimes.delete(id);
     this.core.updateStream(uri, segments.filter((segment) => !current.has(segment.runtimeId)), [...current].filter((id) => !next.has(id)));
@@ -59,14 +70,19 @@ export class NativeSegmentCore {
     if (position > 0 && length <= 0) return null;
     const id = runtimeId(url, position > 0 || length > 0 ? position : undefined, length > 0 ? position + length - 1 : undefined);
     const playhead = this.segmentTimes.get(id);
-    if (!this.playback.isLive && playhead !== undefined) this.core.updatePlayback(playhead, 1);
+    if (playhead !== undefined) this.core.updatePlayback(playhead, 1);
     if (!this.core.hasSegment(id) || !this.core.isSegmentLoadable(id)) return null;
+    this.policy?.begin(id, playhead ?? 0);
     return new Promise<ArrayBuffer>((resolve, reject) => {
-      const timer = setTimeout(() => { this.core.abortSegmentLoading(id); reject(new Error('P2P timeout')); }, 12000);
-      void this.core.loadSegment(id, { onSuccess: (result) => { clearTimeout(timer); resolve(result.data); }, onError: (error) => { clearTimeout(timer); reject(error); } }).catch((error: unknown) => { clearTimeout(timer); reject(error instanceof Error ? error : new Error('Falha P2P')); });
+      const finish = () => { clearTimeout(timer); this.policy?.finish(id); };
+      const timer = setTimeout(() => { this.core.abortSegmentLoading(id); finish(); reject(new Error('P2P timeout')); }, 12000);
+      void this.core.loadSegment(id, { onSuccess: (result) => { finish(); resolve(result.data); }, onError: (error) => { finish(); reject(error); } }).catch((error: unknown) => { finish(); reject(error instanceof Error ? error : new Error('Falha P2P')); });
     });
   }
   addHttp(bytes: number) { this.stats.addHttp(bytes); }
-  httpOnly() { if (!this.httpMode) { this.httpMode = true; this.stats.clearPeers(); this.core.destroy(); } }
-  destroy() { this.segmentTimes.clear(); this.stats.destroy(); if (!this.httpMode) this.core.destroy(); }
+  seedSegments(uri: string) { return this.playlists.get(uri) ?? []; }
+  playhead(position: number) { this.policy?.playhead(position); }
+  httpOnly() { if (!this.httpMode) { this.httpMode = true; this.stats.clearPeers(); this.core.applyDynamicConfig({ isP2PDisabled: true, simultaneousHttpDownloads: 0 }); } }
+  resume() { if (this.httpMode) { this.httpMode = false; this.core.applyDynamicConfig({ isP2PDisabled: false, simultaneousHttpDownloads: this.policy ? 0 : 1 }); } }
+  destroy() { this.reporter?.destroy(); if (this.wake) clearTimeout(this.wake); this.policy?.destroy(); this.core.removeEventListener('onSegmentLoaded', this.downloaded); this.segmentTimes.clear(); this.playlists.clear(); this.stats.destroy(); this.core.destroy(); }
 }

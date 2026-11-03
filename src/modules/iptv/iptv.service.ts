@@ -1,7 +1,9 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import type { Redis } from 'ioredis';
+import type { Metrics } from '../../lib/metrics.js';
 import type { Environment } from '../../config/env.js';
 import { AppError } from '../../lib/errors.js';
+import { xuiTransportUrl } from '../../lib/xui-transport.js';
 import { decrypt, digest, encrypt, encryptResource, decryptResource } from '../../lib/secrets.js';
 import { accountDto, mediaGrantDto, sessionDto, type CatalogItem, type ClientSession, type ContentKind, type MediaGrant } from './iptv.dto.js';
 import type { EngineConfig } from '../admin/admin.dto.js';
@@ -24,7 +26,10 @@ export class IptvService {
   private active = 0;
   private readonly catalogs = new Map<string, { expires: number; items: CatalogItem[] }>();
   private readonly validations = new Map<string, Promise<ClientSession>>();
-  constructor(private readonly redis: Redis, readonly env: Environment, private readonly configuration: () => Promise<EngineConfig>) {}
+  constructor(private readonly redis: Redis, readonly env: Environment, private readonly configuration: () => Promise<EngineConfig>, private readonly metrics?: Metrics) {}
+  private readonly errors: { at: string; kind: string; code: string }[] = [];
+  diagnostics() { return { pendingMetadata: this.active, recentFailures: [...this.errors] }; }
+  private failure(kind: string, code: string) { this.metrics?.upstreamErrors.inc({ kind, code }); this.errors.push({ at: new Date().toISOString(), kind, code }); if (this.errors.length > 20) this.errors.shift(); }
   origin(): URL {
     const url = new URL(this.env.XUI_BASE_URL);
     if (!url.pathname.endsWith('/')) url.pathname += '/';
@@ -35,16 +40,25 @@ export class IptvService {
     if (!allowed.has(url.host) || !['http:', 'https:'].includes(url.protocol) || (url.protocol === 'http:' && !this.env.XUI_ALLOW_HTTP) || url.username || url.password) throw new AppError(502, 'XUI_HOST', 'Host ou protocolo de origem não autorizado');
   }
   async fetch(url: URL, options: RequestInit = {}): Promise<Response> {
-    for (let hop = 0; hop < 4; hop++) {
-      this.checkUpstream(url);
-      let response: Response;
-      try { response = await fetch(url, { ...options, redirect: 'manual', signal: options.signal ?? AbortSignal.timeout(10000) }); }
-      catch { throw new AppError(502, 'XUI_NETWORK', 'Não foi possível consultar a origem'); }
-      const location = response.headers.get('location');
-      if ([301, 302, 303, 307, 308].includes(response.status) && location) { await response.body?.cancel(); url = new URL(location, url); continue; }
-      return response;
-    }
-    throw new AppError(502, 'XUI_REDIRECT', 'Excesso de redirects na origem');
+    const kind = url.pathname.includes('player_api.php') ? 'metadata' : /\.m3u8$/.test(url.pathname) ? 'playlist' : 'media';
+    const start = performance.now(); let result = 'network';
+    try {
+      for (let hop = 0; hop < 4; hop++) {
+        url = xuiTransportUrl(url, this.env); this.checkUpstream(url);
+        let response: Response;
+        try { response = await fetch(url, { ...options, redirect: 'manual', signal: options.signal ?? AbortSignal.timeout(10000) }); }
+        catch (error) {
+          const cause = error instanceof Error && error.cause && typeof error.cause === 'object' && 'code' in error.cause ? String(error.cause.code) : 'NETWORK';
+          this.failure(kind, ['DEPTH_ZERO_SELF_SIGNED_CERT', 'CERT_HAS_EXPIRED', 'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT'].includes(cause) ? cause : 'NETWORK');
+          throw new AppError(502, 'XUI_NETWORK', 'Não foi possível consultar a origem');
+        }
+        const location = response.headers.get('location');
+        if ([301, 302, 303, 307, 308].includes(response.status) && location) { await response.body?.cancel(); url = new URL(location, url); continue; }
+        result = `${Math.floor(response.status / 100)}xx`; if (!response.ok) this.failure(kind, String(response.status));
+        return response;
+      }
+      this.failure(kind, 'REDIRECT'); throw new AppError(502, 'XUI_REDIRECT', 'Excesso de redirects na origem');
+    } finally { this.metrics?.upstream.observe({ kind, result }, (performance.now() - start) / 1000); }
   }
   async playerApi(session: Pick<ClientSession, 'username' | 'password'>, action?: string, params: Record<string, string> = {}): Promise<unknown> {
     if (this.active >= 4) throw new AppError(503, 'XUI_BUSY', 'Origem ocupada; tente novamente');
@@ -98,7 +112,7 @@ export class IptvService {
     if (!updated) throw new AppError(401, 'SESSION_EXPIRED', 'Sessão encerrada');
     return next;
   }
-  account(session: ClientSession) { return { username: session.username, accountId: session.accountId, expiresAt: session.expiresAt, maxConnections: session.maxConnections }; }
+  account(session: ClientSession) { return { username: session.username, accountId: session.accountId, expiresAt: session.expiresAt, maxConnections: session.maxConnections, p2pRequired: this.env.P2P_DELIVERY_ENABLED }; }
   async logout(token: string) {
     const hash = digest(token);
     await this.redis.eval("local ids=redis.call('ZRANGE',KEYS[2],0,-1); for _,id in ipairs(ids) do redis.call('DEL','highpass:media:'..id) end; redis.call('DEL',KEYS[1],KEYS[2]); return 1", 2, `highpass:client:${hash}`, `highpass:media-session:${hash}`);
@@ -155,14 +169,21 @@ export class IptvService {
     const folder = grant.kind === 'episode' ? 'series' : grant.kind === 'movie' ? 'movie' : 'live';
     const url = new URL(`${folder}/${encodeURIComponent(session.username)}/${encodeURIComponent(session.password)}/${grant.id}.${grant.extension}`, this.origin());
     const directUrl = this.resourceUrl(grantId, url);
-    return { url: grant.kind !== 'live' && grant.extension !== 'm3u8' ? `/api/iptv/vod/${grantId}/index.m3u8` : directUrl, directUrl, sourceFormat: grant.extension, statsPath: `/api/iptv/traffic/${grantId}`, trackerPath: `/api/iptv/tracker/${grantId}`, swarmId: grant.swarmId, expiresAt: grant.expiresAt, isLive: grant.kind === 'live', isHls: true, iceServers: this.env.RTC_ICE_SERVERS, config: await this.configuration() };
+    const iceServers = [...this.env.RTC_ICE_SERVERS];
+    if (this.env.TURN_URLS && this.env.TURN_SHARED_SECRET) {
+      const username = `${Math.ceil(grant.expiresAt / 1000)}:${session.accountId.slice(0, 16)}`;
+      iceServers.push({ urls: this.env.TURN_URLS.split(',').map((value) => value.trim()).filter(Boolean), username, credential: createHmac('sha1', this.env.TURN_SHARED_SECRET).update(username).digest('base64') });
+    }
+    return { url: grant.kind !== 'live' && grant.extension !== 'm3u8' ? `/api/iptv/vod/${grantId}/index.m3u8` : directUrl, directUrl, sourceFormat: grant.extension, telemetryPath: `/api/iptv/telemetry/${grantId}`, statsPath: `/api/iptv/traffic/${grantId}`, trackerPath: `/api/iptv/tracker/${grantId}`, swarmId: grant.swarmId, expiresAt: grant.expiresAt, isLive: grant.kind === 'live', isHls: true, iceServers, config: await this.configuration(), ...(this.env.P2P_DELIVERY_ENABLED ? { delivery: { mode: 'p2p-first' as const, seedPath: `/api/iptv/seed/${grantId}`, segmentTimeoutMs: this.env.P2P_SEGMENT_TIMEOUT_MS, recoveryMs: 5000 } } : {}) };
   }
   isRelayRequest(request: { headers: Record<string, unknown>; raw: { socket: { remoteAddress: string | undefined } } }) {
     return request.headers['x-highpass-relay'] === this.relaySecret && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.raw.socket.remoteAddress ?? '');
   }
+  isSeedRequest(request: Parameters<IptvService['isRelayRequest']>[0]) { return this.isRelayRequest(request) && request.headers['x-highpass-seed'] === '1'; }
   async recordHttp(grant: string, bytes: number) { if (bytes > 0) await this.redis.multi().hincrby(`highpass:traffic:${digest(grant)}`, 'httpDownloaded', bytes).expire(`highpass:traffic:${digest(grant)}`, 86400).exec(); }
   async traffic(grant: string) { const httpDownloaded = Number(await this.redis.hget(`highpass:traffic:${digest(grant)}`, 'httpDownloaded')) || 0; return { httpDownloaded, p2pDownloaded: 0, p2pUploaded: 0, peers: 0, totalDownloaded: httpDownloaded, httpPercentage: httpDownloaded ? 100 : 0, p2pPercentage: 0, transport: 'http', scope: 'engine-to-client' }; }
   resourceUrl(grantId: string, url: URL) {
+    url = xuiTransportUrl(url, this.env);
     this.checkUpstream(url);
     const sealed = encryptResource(JSON.stringify({ grantId, url: url.href }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
     return `/api/iptv/media/${grantId}/${sealed}`;
@@ -175,19 +196,42 @@ export class IptvService {
     await this.sessionByHash(grant.sessionHash);
     return grant;
   }
-  resource(grantId: string, sealed: string): URL {
+  async resource(grantId: string, sealed: string): Promise<URL> {
     try {
       const parsed = object(JSON.parse(decryptResource(sealed, this.env.CONFIG_ENCRYPTION_KEY, grantId)) as unknown);
-      if (parsed.grantId !== grantId || typeof parsed.url !== 'string') throw new Error('Grant diferente');
-      const url = new URL(parsed.url); this.checkUpstream(url); return url;
-    } catch { throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
+      if (parsed.grantId !== grantId) throw new Error('Grant diferente');
+      let value = parsed.url;
+      if (typeof parsed.alias === 'string' && /^[a-f0-9]{64}$/.test(parsed.alias)) {
+        const saved = await this.redis.get(`highpass:hls:${digest(grantId)}:${parsed.alias}`);
+        if (!saved) throw new AppError(404, 'SEGMENT_EXPIRED', 'Segmento fora da janela ao vivo');
+        value = decrypt(saved, this.env.CONFIG_ENCRYPTION_KEY);
+      }
+      if (typeof value !== 'string') throw new Error('Recurso inválido');
+      const url = xuiTransportUrl(new URL(value), this.env); this.checkUpstream(url); return url;
+    } catch (error) { if (error instanceof AppError && error.code === 'SEGMENT_EXPIRED') throw error; throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
   }
-  rewriteManifest(text: string, base: URL, grantId: string): string {
+  async rewriteManifest(text: string, base: URL, grantId: string, playlistIdentity: string): Promise<string> {
     const local = (value: string) => this.resourceUrl(grantId, new URL(value, base));
-    return text.split(/\r?\n/).map((line) => {
+    const lines = text.split(/\r?\n/);
+    let sequence = Number(lines.find((line) => line.startsWith('#EXT-X-MEDIA-SEQUENCE:'))?.split(':')[1] ?? 0);
+    const discontinuity = lines.find((line) => line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE:')) ?? '';
+    const pipeline = this.redis.pipeline(); let media = false; let count = 0;
+    const result = lines.map((line) => {
       if (!line.trim()) return line;
+      if (line.startsWith('#EXTINF:')) media = true;
       if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_match, uri: string) => `URI="${local(uri)}"`);
-      return local(line.trim());
+      if (!media) return local(line.trim());
+      media = false;
+      if (++count > 2000 || !Number.isSafeInteger(sequence)) throw new AppError(502, 'HLS_SEGMENTS', 'Playlist excedeu o limite de segmentos');
+      const url = xuiTransportUrl(new URL(line.trim(), base), this.env); this.checkUpstream(url);
+      // A assinatura XUI pode mudar sem mudar os bytes/sn. O identificador local
+      // fica estável e somente o destino cifrado expira/é atualizado no Redis.
+      const alias = digest(`${playlistIdentity}:${discontinuity}:${sequence++}`);
+      pipeline.set(`highpass:hls:${digest(grantId)}:${alias}`, encrypt(url.href, this.env.CONFIG_ENCRYPTION_KEY), 'EX', 600);
+      const sealed = encryptResource(JSON.stringify({ grantId, alias }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
+      return `/api/iptv/media/${grantId}/${sealed}`;
     }).join('\n');
+    if (count) { const replies = await pipeline.exec(); if (!replies || replies.some(([error]) => error)) throw new AppError(503, 'HLS_CACHE', 'Mapeamento de segmentos indisponível'); }
+    return result;
   }
 }

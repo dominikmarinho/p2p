@@ -96,10 +96,13 @@ export class PrivateTracker {
           const grant = await service.grant(request.params.grant);
           const config = await this.configuration();
           if (!admitted) {
+            if (service.isSeedRequest(request)) admitted = true;
+            else {
             const account = await service.sessionByHash(grant.sessionHash);
             accountKey = `highpass:tracker:account:${account.accountId}`;
             const accepted = await this.redis.eval("redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',ARGV[1]); if redis.call('ZCARD',KEYS[1]) >= tonumber(ARGV[2]) then return 0 end; redis.call('ZADD',KEYS[1],ARGV[3],ARGV[4]); redis.call('EXPIRE',KEYS[1],90); return 1", 1, accountKey, Date.now(), Math.min(20, account.maxConnections), Date.now() + 75000, connection);
             if (accepted !== 1) throw new Error('Limite da linha atingido'); admitted = true;
+            }
           }
           const swarm = digest(`${grant.swarmId}:${message.info_hash}`); const id = digest(peerId);
           const swarmKey = `highpass:tracker:swarm:${swarm}`; const peerKey = `highpass:tracker:peer:${swarm}:${id}`;

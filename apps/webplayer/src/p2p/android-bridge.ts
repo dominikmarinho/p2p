@@ -1,7 +1,8 @@
 import { NativeSegmentCore } from './native-core.js';
 import type { Playback } from '../api.js';
+import { BrowserSeed } from './browser-seed.js';
 
-export interface AndroidBridgeApi { init(playback: Playback, enabled: boolean): void; playlist(uri: string, text: string): void; load(id: string, uri: string, position: number, length: number): void; http(bytes: number): void; httpOnly(): void; destroy(): void }
+export interface AndroidBridgeApi { init(playback: Playback, enabled: boolean, seeder?: boolean): void; playlist(uri: string, text: string): void; load(id: string, uri: string, position: number, length: number): void; http(bytes: number): void; httpOnly(): void; resume(): void; playhead(position: number): void; seedTargets(positions: number[]): void; seedStatus(): { ready: boolean; lastSegmentAt: number; loads: number; failures: number } | undefined; destroy(): void }
 
 declare global {
   interface Window {
@@ -10,8 +11,9 @@ declare global {
   }
 }
 let core: NativeSegmentCore | undefined;
+let seed: BrowserSeed | undefined;
 window.HighpassBridge = {
-  init: (playback, enabled) => { core?.destroy(); core = new NativeSegmentCore(playback, enabled, (stats) => window.NativeSegments?.stats(JSON.stringify(stats))); },
+  init: (playback, enabled, seeder = false) => { seed?.close(); seed = undefined; core?.destroy(); core = new NativeSegmentCore(playback, enabled, (stats) => window.NativeSegments?.stats(JSON.stringify(stats)), seeder); if (seeder) seed = new BrowserSeed(core, playback); },
   playlist: (uri, text) => core?.observePlaylist(uri, text),
   load: (id, uri, position, length) => {
     if (!core) { window.NativeSegments?.fallback(id); return; }
@@ -25,7 +27,11 @@ window.HighpassBridge = {
     }).catch(() => window.NativeSegments?.fallback(id));
   },
   httpOnly: () => core?.httpOnly(),
+  resume: () => core?.resume(),
+  playhead: (position) => core?.playhead(position),
+  seedTargets: (positions) => seed?.targets(positions),
+  seedStatus: () => seed?.status(),
   http: (bytes) => core?.addHttp(bytes),
-  destroy: () => { core?.destroy(); core = undefined; },
+  destroy: () => { seed?.close(); seed = undefined; core?.destroy(); core = undefined; },
 };
 window.NativeSegments?.ready();

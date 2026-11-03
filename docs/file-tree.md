@@ -80,8 +80,11 @@ highpass-p2p-engine/
 │       │   │   └── P2PVideoPlayer.tsx
 │       │   ├── p2p/
 │       │   │   ├── android-bridge.ts
+│       │   │   ├── browser-seed.ts
+│       │   │   ├── delivery-policy.ts
 │       │   │   ├── native-core.ts
-│       │   │   └── stats.ts
+│       │   │   ├── stats.ts
+│       │   │   └── telemetry.ts
 │       │   ├── App.tsx
 │       │   ├── Login.tsx
 │       │   ├── api.ts
@@ -105,6 +108,7 @@ highpass-p2p-engine/
 │   ├── file-tree.md
 │   ├── p2p-observability.md
 │   ├── production.md
+│   ├── seeds-production.md
 │   ├── smart-tv-production.md
 │   └── validation.md
 ├── drizzle/
@@ -131,6 +135,7 @@ highpass-p2p-engine/
 │       ├── highpass-http.conf
 │       └── highpass-proxy.conf
 ├── prometheus/
+│   ├── blackbox.yml
 │   ├── prometheus.prod.yml
 │   └── prometheus.yml
 ├── public/
@@ -139,11 +144,16 @@ highpass-p2p-engine/
 │       ├── admin.js
 │       └── index.html
 ├── scripts/
+│   ├── benchmark-http.mjs
 │   ├── build-web.mjs
+│   ├── collect-container-metrics.py
 │   ├── deploy.sh
 │   ├── highpass-switch
 │   ├── observability.sh
-│   └── package-tizen.py
+│   ├── package-tizen.py
+│   ├── patch-p2p.mjs
+│   ├── setup-monitoring-host.sh
+│   └── setup-turn.sh
 ├── src/
 │   ├── config/
 │   │   └── env.ts
@@ -157,7 +167,8 @@ highpass-p2p-engine/
 │   │   ├── metrics.ts
 │   │   ├── password.ts
 │   │   ├── redis.ts
-│   │   └── secrets.ts
+│   │   ├── secrets.ts
+│   │   └── xui-transport.ts
 │   ├── modules/
 │   │   ├── admin/
 │   │   │   ├── admin-auth.service.ts
@@ -184,6 +195,8 @@ highpass-p2p-engine/
 │   │   │   ├── iptv.service.ts
 │   │   │   ├── player-ui.ts
 │   │   │   ├── roku-relay.ts
+│   │   │   ├── seed-manager.ts
+│   │   │   ├── telemetry.ts
 │   │   │   ├── tracker.ts
 │   │   │   └── vod-manager.ts
 │   │   ├── notes/
@@ -208,22 +221,29 @@ highpass-p2p-engine/
 │   └── server.ts
 ├── tests/
 │   ├── e2e/
+│   │   ├── container-seed.ts
 │   │   ├── iptv-browser.ts
 │   │   ├── native-vod-seek.ts
+│   │   ├── seed-delivery.ts
 │   │   └── vod-relay.ts
 │   ├── helpers/
 │   │   └── xui-fixture.ts
 │   ├── integration/
 │   │   ├── admin-login.test.ts
 │   │   ├── api.test.ts
+│   │   ├── hls-signatures.test.ts
 │   │   ├── iptv.test.ts
 │   │   ├── p2p.test.ts
-│   │   └── xui-admin.test.ts
+│   │   ├── telemetry.test.ts
+│   │   ├── xui-admin.test.ts
+│   │   └── xui-transport.test.ts
 │   └── unit/
 │       ├── control-plane.test.ts
+│       ├── delivery-policy.test.ts
 │       ├── resources.test.ts
 │       ├── security.test.ts
-│       └── traffic.test.ts
+│       ├── traffic.test.ts
+│       └── xui-transport.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .env.production.example
@@ -243,5 +263,3 @@ highpass-p2p-engine/
 ├── tsconfig.json
 └── vitest.config.ts
 ```
-
-Saídas não versionadas: public/player, dist, node_modules, artifacts, caches/build Android, local.properties e .env. Os fontes, wrapper Gradle e migrations/metadados estão incluídos.

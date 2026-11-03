@@ -33,6 +33,8 @@ import { XuiAuthService } from './services/xui-auth.service.js';
 import { PeerManager } from './services/peer-manager.js';
 import { peerRoutes } from './ws/peer.handler.js';
 import { RokuRelay } from './modules/iptv/roku-relay.js';
+import { PlaybackTelemetry } from './modules/iptv/telemetry.js';
+import { SeedManager } from './modules/iptv/seed-manager.js';
 import { VodManager } from './modules/iptv/vod-manager.js';
 import { IptvService } from './modules/iptv/iptv.service.js';
 import { iptvRoutes } from './modules/iptv/iptv.routes.js';
@@ -44,6 +46,7 @@ export function buildApp(env: Environment) {
     loggerInstance: logger,
     bodyLimit: 16384,
     requestTimeout: 10000,
+    pluginTimeout: env.SHUTDOWN_TIMEOUT_MS,
     connectionTimeout: 10000,
     keepAliveTimeout: 5000,
     forceCloseConnections: 'idle',
@@ -57,8 +60,10 @@ export function buildApp(env: Environment) {
   const admin = new AdminService(db, env, adminAuth);
   const servers = new XuiServersService(db, env);
   const peers = new PeerManager(redis, metrics);
-  const iptv = new IptvService(redis, env, () => admin.config());
+  const iptv = new IptvService(redis, env, () => admin.config(), metrics);
+  const telemetry = new PlaybackTelemetry(redis, iptv, metrics);
   const relay = new RokuRelay(iptv);
+  const seeds = new SeedManager(iptv, relay, metrics);
   const vod = new VodManager(iptv, relay);
   const tracker = new PrivateTracker(redis, iptv, metrics, admin);
   app.setValidatorCompiler(validatorCompiler);
@@ -70,7 +75,7 @@ export function buildApp(env: Environment) {
     await peers.start();
     await tracker.start();
   });
-  app.addHook('preClose', async () => { await vod.close(); await relay.close(); });
+  app.addHook('preClose', async () => { await seeds.close(); await vod.close(); await relay.close(); });
   app.addHook('onClose', async () => {
     peers.close();
     tracker.close();
@@ -136,9 +141,12 @@ export function buildApp(env: Environment) {
   app.register(adminUi);
   app.register(playerUi);
   app.register((scope, _options, done) => { vod.routes(scope); done(); });
-  app.register((scope, _options, done) => { adminRoutes(scope, admin, new XuiServersController(servers), adminAuth, env); done(); }, { prefix: '/api/admin' });
+  app.register((scope, _options, done) => { adminRoutes(scope, admin, new XuiServersController(servers), adminAuth, env, seeds, async () => {
+    const start = performance.now(); await redis.ping();
+    return { uptime: process.uptime(), memory: process.memoryUsage(), database: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }, redisPingMs: performance.now() - start, upstream: iptv.diagnostics(), players: await telemetry.snapshot(), seeds: seeds.snapshot() };
+  }); done(); }, { prefix: '/api/admin' });
   app.register((scope, _options, done) => { peerRoutes(scope, redis, new XuiAuthService(db, redis, env, servers, metrics), admin, peers, metrics); done(); });
-  app.register((scope, _options, done) => { iptvRoutes(scope, iptv, relay); done(); }, { prefix: '/api/iptv' });
+  app.register((scope, _options, done) => { iptvRoutes(scope, iptv, relay, seeds); telemetry.routes(scope); done(); }, { prefix: '/api/iptv' });
   app.register((scope, _options, done) => { tracker.routes(scope); done(); });
   return app;
 }

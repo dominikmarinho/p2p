@@ -8,7 +8,7 @@ backup=$(mktemp /etc/nginx/highpass/upstream.backup.XXXXXX)
 candidate=$(mktemp /etc/nginx/highpass/upstream.candidate.XXXXXX)
 trap 'rm -f "$backup" "$candidate"' EXIT
 cp -- "$config" "$backup"
-printf 'upstream highpass_api { server 127.0.0.1:%s; keepalive 64; }\n' "$1" > "$candidate"
+printf 'upstream highpass_api { server 127.0.0.1:%s max_fails=1 fail_timeout=5s; server 127.0.0.1:3004 backup; keepalive 64; }\n' "$1" > "$candidate"
 chmod 644 "$candidate"
 mv -- "$candidate" "$config"
 if ! /usr/sbin/nginx -t || ! /usr/bin/systemctl reload nginx; then

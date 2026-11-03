@@ -12,7 +12,7 @@ RUN npm run build:server
 
 FROM dependencies AS web-build
 COPY apps/webplayer ./apps/webplayer
-COPY scripts/build-web.mjs ./scripts/build-web.mjs
+COPY scripts/build-web.mjs scripts/patch-p2p.mjs ./scripts/
 RUN npm run build:web
 
 FROM node:22-bookworm-slim AS production-dependencies

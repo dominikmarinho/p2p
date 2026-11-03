@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 let mustChangePassword = false;
 let view = 'overview';
 let editing = null;
-const titles = { overview: 'Visão geral', 'xui-servers': 'Servidores XUI ONE', routes: 'Roteamento de canais', config: 'Parâmetros P2P', keys: 'Chaves do Control Plane', whitelist: 'Whitelist de IPs', audit: 'Auditoria', profile: 'Meu perfil' };
+const titles = { monitoring: 'Monitoramento e diagnóstico', seeds: 'Seeds de mídia', overview: 'Visão geral', 'xui-servers': 'Servidores XUI ONE', routes: 'Roteamento de canais', config: 'Parâmetros P2P', keys: 'Chaves do Control Plane', whitelist: 'Whitelist de IPs', audit: 'Auditoria', profile: 'Meu perfil' };
 const definitions = {
   'xui-servers': [['name', 'Nome', 'text'], ['baseUrl', 'URL base autorizada', 'url'], ['adminAccessCode', 'Access Code do XUI (tipo Admin API)', 'password'], ['adminApiKey', 'API Key do administrador XUI', 'password'], ['enabled', 'Habilitado', 'checkbox']],
   routes: [['channel', 'Identificador do canal', 'text'], ['streamId', 'ID do stream XUI', 'number'], ['serverId', 'UUID do servidor principal', 'text'], ['fallbackServerIds', 'UUIDs de fallback, separados por vírgulas', 'text'], ['enabled', 'Habilitado', 'checkbox']],
@@ -37,6 +37,31 @@ async function render() {
       for (const [label, value] of [['Servidores cadastrados', servers.length], ['Canais roteados', routes.length], ['WebSockets ativos', peers.connections], ['Eventos recentes', events.length]]) { const card = element('div', undefined, 'card'); const counter = element('strong', String(value)); if (label === 'WebSockets ativos') counter.id = 'active-peers'; card.append(element('p', label), counter); cards.append(card); }
       const panel = element('div', undefined, 'panel'); panel.append(element('h2', 'Uma origem. Uma rede de peers.'), element('p', 'Cadastre uma origem XUI ONE autorizada, associe seus canais e ajuste os limites da engine. Cada linha é validada na origem antes de receber um ticket de sinalização.'), element('p', 'Prometheus coleta a API e os processos Node.js. O dashboard provisionado do Grafana reúne CPU, memória, HTTP e conexões WebSocket.'));
       $('content').append(cards, panel); return;
+    }
+    if (view === 'monitoring') {
+      const data = await api('monitoring'); const cards = element('div', undefined, 'cards');
+      for (const [label, value] of [['Memória do processo', `${(data.memory.rss / 1048576).toFixed(0)} MB`], ['Redis · ping', `${data.redisPingMs.toFixed(1)} ms`], ['PostgreSQL · esperando conexão', data.database.waiting], ['Seeds prontos / alocados', `${data.seeds.ready} / ${data.seeds.active}`]]) { const card = element('div', undefined, 'card'); card.append(element('p', label), element('strong', String(value))); cards.append(card); }
+      const panel = element('div', undefined, 'panel'); panel.append(element('h2', 'Diagnóstico de reprodução e infraestrutura'), element('p', `${data.upstream.pendingMetadata} consulta(s) aguardando a origem. Processo ativo há ${(data.uptime / 3600).toFixed(1)} h; pool PostgreSQL ${data.database.total} conexões, ${data.database.idle} livres.`));
+      const link = element('a', 'Abrir Grafana · seeds, latência da origem, sondas HTTPS, host e containers'); link.href = '/grafana/d/fastify-p2p-dashboard'; link.target = '_blank'; link.rel = 'noopener'; panel.append(link, element('p', 'A latência da API inclui consultas ao XUI. O dashboard separa o tempo até os headers da origem e os endpoints locais. Os contadores do seed medem payload real do worker; não representam tráfego total entre todos os aparelhos.'));
+      panel.append(element('h3', 'Falhas recentes da origem nesta instância'));
+      if (!data.upstream.recentFailures.length) panel.append(element('p', 'Nenhuma falha registrada desde a inicialização.'));
+      for (const failure of [...data.upstream.recentFailures].reverse()) panel.append(element('p', `${failure.at} · ${failure.kind} · ${failure.code}`));
+      panel.append(element('h3', 'Telemetria reportada pelos players'), element('p', `${data.players.modes.p2p} recebendo P2P · ${data.players.modes.http} recebendo HTTP · ${data.players.modes.waiting} aguardando dados. Janela de 30 segundos.`), element('p', `Recebido HTTP: ${(Number(data.players.bytes.http || 0) / 1048576).toFixed(1)} MB · recebido P2P: ${(Number(data.players.bytes.p2p || 0) / 1048576).toFixed(1)} MB. Totais declarados pelos clientes; não usar para cobrança.`));
+      for (const failure of data.players.failures) panel.append(element('p', `${failure.at} · ${failure.client} · ${failure.code}`));
+      $('content').append(cards, panel); return;
+    }
+    if (view === 'seeds') {
+      const state = await api('seeds'); const panel = element('div', undefined, 'panel');
+      panel.append(element('h2', state.enabled ? 'Distribuição P2P com seed automático' : 'Instância de HTTP de contingência'), element('p', 'Cada conteúdo ativo compartilha um seed. A origem alimenta o seed por HTTP; os players recebem os segmentos por WebRTC quando disponíveis e usam HTTP durante falhas de entrega.'), element('p', `${state.active} conteúdo(s) alocado(s) · ${state.ready} seed(s) pronto(s). Dados desta instância.`));
+      $('content').append(panel);
+      if (!state.streams.length) { $('content').append(element('div', 'Nenhuma reprodução P2P ativa nesta instância.', 'empty')); return; }
+      const wrap = element('div', undefined, 'table-wrap'); const table = element('table'); const header = element('tr');
+      for (const title of ['Tipo', 'Conteúdo XUI', 'Players', 'Estado', 'Origem HTTP', 'Enviado por P2P', 'Ações']) header.append(element('th', title)); table.append(header);
+      for (const seed of state.streams) {
+        const row = element('tr'); for (const value of [seed.kind, seed.content, seed.viewers, seed.ready ? 'Pronto' : 'Preparando / recuperando', `${(seed.originBytes / 1048576).toFixed(1)} MB`, `${(seed.p2pUploaded / 1048576).toFixed(1)} MB`]) row.append(element('td', String(value)));
+        const actions = element('td'); const restart = element('button', 'Reiniciar seed'); restart.onclick = async () => { if (!confirm('Reiniciar este seed? Os players podem usar HTTP durante a recuperação.')) return; try { await api(`seeds/${seed.swarm}/restart`, { method: 'POST' }); await render(); } catch (error) { $('notice').textContent = error.message; } }; actions.append(restart); row.append(actions); table.append(row);
+      }
+      wrap.append(table); $('content').append(wrap); return;
     }
     const rows = await api(view);
     if (view === 'xui-servers') {
@@ -116,3 +141,5 @@ fetch('/health/ready').then((response) => { $('health').textContent = response.o
 void api('me').then((user) => { mustChangePassword = user.mustChangePassword; view = mustChangePassword ? 'profile' : 'overview'; return render(); }).catch(() => $('login').showModal());
 
 setInterval(() => { if (view === 'overview' && !$('login').open) void api('peers').then((data) => { const node = $('active-peers'); if (node) node.textContent = String(data.connections); }).catch(() => {}); }, 5000);
+
+setInterval(() => { if (['seeds', 'monitoring'].includes(view) && !$('login').open && !$('editor').open) void render(); }, 5000);

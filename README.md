@@ -18,7 +18,8 @@ ExoPlayer + DataSource P2P                     hls.js + HlsJsP2PEngine
                                   └→ Drizzle / PostgreSQL: configuração e auditoria
 
 WebPlayer ←──── WebRTC DataChannels / segmentos ────→ Android
-                  HTTP de origem como fallback
+            Seed de infraestrutura ← HTTP da origem
+                  HTTP de contingência aos clientes
 
 /metrics → Prometheus → Grafana provisionado
 migration-runner → advisory lock PostgreSQL → drizzle/*.sql
@@ -26,7 +27,9 @@ migration-runner → advisory lock PostgreSQL → drizzle/*.sql
 
 Arquitetura modular com Clean Architecture simplificada: `Routes + DTO Zod → Controller → Service → Repository → Drizzle/pg ou Redis`. O módulo IPTV usa rotas como controladores de transporte e recebe suas dependências explicitamente; módulos de administração e CRUD mantêm controllers/repositories separados. Drizzle usa `pg.Pool`, sem engine externa. Rede assíncrona, pools, paginação, filas e buffers têm limites explícitos; desempenho deve ser medido sob carga real, sem promessa de overhead zero.
 
-O transporte P2P usa **p2p-media-loader 4 nos dois clientes**. No Android, ExoPlayer decodifica o vídeo; uma WebView sem player executa o mesmo Core JS para interoperar com o WebPlayer. Os segmentos chegam a uma DataSource nativa por blocos limitados. A opção evita implementar um protocolo WebRTC incompatível no Kotlin. O tracker privado opera sobre Redis entre instâncias; o vídeo circula entre peers, com fallback HTTP pelo backend.
+O transporte P2P usa **p2p-media-loader 4 nos dois clientes**. No Android, ExoPlayer decodifica o vídeo; uma WebView sem player executa o mesmo Core JS para interoperar com o WebPlayer. Os segmentos chegam a uma DataSource nativa por blocos limitados. Seeds em Chromium sem decodificador usam o mesmo protocolo para alimentar qualquer conteúdo ativo. A opção evita implementar um protocolo WebRTC incompatível no Kotlin. O tracker privado opera sobre Redis entre instâncias; o vídeo circula entre peers, com fallback HTTP pelo backend.
+
+A política de produção e a operação dos seeds, coturn, contingência HTTP e monitoramento estão em [docs/seeds-production.md](docs/seeds-production.md).
 
 ## 2. Estrutura entregue
 

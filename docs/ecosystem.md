@@ -58,7 +58,7 @@ O tracker implementa `announce`, `offers` e `answer` do protocolo WebTorrent. Ca
 RTC_ICE_SERVERS=[{"urls":"stun:stun.l.google.com:19302"}]
 ```
 
-Para redes que precisam de relay, acrescente seu TURN com `urls`, `username` e `credential`. Não há servidor TURN incluído. Credenciais TURN retornadas ao cliente são visíveis a ele; para operação maior, use credenciais temporárias emitidas pelo operador em vez de um segredo de longa duração. O fallback HTTP mantém a reprodução quando não há conexão P2P.
+Para redes que precisam de relay, acrescente seu TURN com `urls`, `username` e `credential`. A implantação atual usa coturn via `scripts/setup-turn.sh`, com credenciais temporárias HMAC emitidas pela engine. O segredo compartilhado permanece no servidor; somente credenciais derivadas e com expiração chegam ao cliente. O fallback HTTP mantém a reprodução quando não há conexão P2P.
 
 O WebRTC pode usar UDP ou relay conforme negociação/rede. Não é um transporte UDP Kotlin separado. A compatibilidade foi comprovada com HLS MPEG-TS simples; valide variantes ABR, áudio separado, descontinuidades, byterange, criptografia, codecs e versões WebView usadas na sua base. Segmentos com watermark, conteúdo personalizado ou chaves diferentes por linha não podem compartilhar a mesma swarm.
 

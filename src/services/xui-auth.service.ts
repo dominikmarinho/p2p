@@ -9,6 +9,7 @@ import type { XuiServersService } from '../modules/admin/xui-servers.service.js'
 import type { Metrics } from '../lib/metrics.js';
 import { digest } from '../lib/secrets.js';
 import { AppError } from '../lib/errors.js';
+import { xuiTransportUrl } from '../lib/xui-transport.js';
 
 const credential = z.string().min(1).max(256).refine((value) => !/[\\/]/.test(value) && Array.from(value).every((character) => character.charCodeAt(0) >= 32) && value !== '.' && value !== '..', 'Credencial contém segmento de URL inválido');
 export const authorizeDto = z.object({ channel: z.string().regex(/^[\w-]{1,64}$/), username: credential.max(128), password: credential }).strict();
@@ -89,6 +90,7 @@ export class XuiAuthService {
   private async probeStream(initial: URL, headers: Record<string, string>): Promise<number> {
     let url = initial;
     for (let hop = 0; hop < 4; hop++) {
+      url = xuiTransportUrl(url, this.env);
       const requestHeaders = url.origin === initial.origin ? headers : { accept: '*/*' };
       let response = await fetch(url, { method: 'HEAD', headers: requestHeaders, redirect: 'manual', signal: AbortSignal.timeout(3000) });
       if (response.status === 405) { await response.body?.cancel(); response = await fetch(url, { headers: requestHeaders, redirect: 'manual', signal: AbortSignal.timeout(3000) }); }
@@ -96,7 +98,7 @@ export class XuiAuthService {
       const location = response.headers.get('location');
       await response.body?.cancel();
       if (![301, 302, 303, 307, 308].includes(status) || !location) return status;
-      url = this.servers.validateRequestUrl(new URL(location, url).href);
+      url = this.servers.validateRequestUrl(xuiTransportUrl(new URL(location, url), this.env).href);
     }
     throw new Error('Excesso de redirects no stream');
   }

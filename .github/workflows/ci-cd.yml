@@ -164,7 +164,7 @@ jobs:
       - name: Package exact revision of deployment files
         shell: bash
         run: |
-          tar -czf /tmp/highpass-release.tgz docker-compose.prod.yml scripts/deploy.sh scripts/observability.sh prometheus grafana
+          tar -czf /tmp/highpass-release.tgz docker-compose.prod.yml scripts prometheus grafana
           echo "RELEASE_B64=$(base64 -w0 /tmp/highpass-release.tgz)" >> "$GITHUB_ENV"
       - name: Deploy verified image over SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
@@ -196,3 +196,11 @@ jobs:
             unset GHCR_TOKEN
             export APP_IMAGE="$IMAGE_NAME:$IMAGE_TAG"
             bash "$release_dir/scripts/deploy.sh"
+      - name: Verify public HTTPS and TURN TLS from the runner
+        env:
+          PUBLIC_BASE: ${{ vars.PUBLIC_ENGINE_URL || 'https://p2p.remoto.api.br' }}
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 15 "$PUBLIC_BASE/health/ready"
+          curl --fail --silent --show-error --max-time 15 "$PUBLIC_BASE/grafana/api/health"
+          domain=$(python3 -c 'import os,urllib.parse; print(urllib.parse.urlparse(os.environ["PUBLIC_BASE"]).hostname)')
+          timeout 15 openssl s_client -connect "$domain:5349" -servername "$domain" -verify_hostname "$domain" -verify_return_error -brief </dev/null

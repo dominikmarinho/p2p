@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyReply } from 'fastify';
 import { readFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 
-export function xuiFixture(mediaFolder?: string) {
+export function xuiFixture(mediaFolder?: string, maxConnections = 4) {
   const source = Fastify();
   source.get<{ Querystring: Record<string, string> }>('/player_api.php', (request, reply) => {
     const { username, password, action } = request.query;
@@ -17,10 +18,10 @@ export function xuiFixture(mediaFolder?: string) {
       get_short_epg: { epg_listings: [{ title: Buffer.from('Programa ao vivo').toString('base64'), description: Buffer.from('Programação de validação').toString('base64'), start: '2026-11-02 21:00:00', end: '2026-11-02 22:00:00' }] },
     };
     if (action) return reply.send(data[action] ?? []);
-    return reply.send({ user_info: { auth: 1, username, status: 'Active', exp_date: String(Math.floor(Date.now() / 1000) + 86400), max_connections: '4' } });
+    return reply.send({ user_info: { auth: 1, username, status: 'Active', exp_date: String(Math.floor(Date.now() / 1000) + 86400), max_connections: String(maxConnections) } });
   });
   source.get('/live/:username/:password/:id', async (_request, reply) => {
-    const manifest = mediaFolder ? (await readFile(resolve(mediaFolder, 'index.m3u8'), 'utf8')).replace('#EXT-X-ENDLIST', '').replace(/^([^#\n][^\n]*)$/gm, '/hls/$1') : '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:41\n#EXT-X-KEY:METHOD=AES-128,URI="/hls/key.bin"\n#EXTINF:4,\n/hls/segment.ts\n';
+    const manifest = mediaFolder ? (await readFile(resolve(mediaFolder, 'index.m3u8'), 'utf8')).replace('#EXT-X-ENDLIST', '').replace(/^([^#\n][^\n]*)$/gm, `/hls/$1?ticket=${randomUUID()}`) : '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:41\n#EXT-X-KEY:METHOD=AES-128,URI="/hls/key.bin"\n#EXTINF:4,\n/hls/segment.ts\n';
     return reply.type('application/vnd.apple.mpegurl').send(manifest);
   });
   source.get<{ Params: { file: string } }>('/hls/:file', async (request, reply) => {

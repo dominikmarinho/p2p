@@ -1,4 +1,10 @@
 x-app-environment: &app-environment
+  P2P_SEED_ENABLED: ${P2P_SEED_ENABLED:-true}
+  P2P_DELIVERY_ENABLED: ${P2P_DELIVERY_ENABLED:-true}
+  P2P_SEED_MAX_STREAMS: ${P2P_SEED_MAX_STREAMS:-4}
+  P2P_SEGMENT_TIMEOUT_MS: ${P2P_SEGMENT_TIMEOUT_MS:-3000}
+  TURN_URLS: ${TURN_URLS:-}
+  TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:-}
   NODE_ENV: production
   HOST: 0.0.0.0
   PORT: 3000
@@ -14,6 +20,7 @@ x-app-environment: &app-environment
   ADMIN_BOOTSTRAP_KEY: ${ADMIN_BOOTSTRAP_KEY:?ADMIN_BOOTSTRAP_KEY obrigatória}
   CONFIG_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:?CONFIG_ENCRYPTION_KEY obrigatória}
   XUI_ALLOWED_HOSTS: ${XUI_ALLOWED_HOSTS:?XUI_ALLOWED_HOSTS obrigatória}
+  XUI_PRESERVE_HTTP: ${XUI_PRESERVE_HTTP:-true}
   XUI_ALLOW_HTTP: ${XUI_ALLOW_HTTP:-false}
   METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN obrigatório}
   XUI_BASE_URL: ${XUI_BASE_URL:-http://xuione.remoto.api.br}
@@ -74,8 +81,8 @@ services:
     volumes: ["vod_cache:/cache/vod"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 1536m
-    cpus: 2.0
+    mem_limit: 3072m
+    cpus: 4.0
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -104,6 +111,32 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks: [backend]
+    logging: *logging
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    command: ["--path.rootfs=/host", "--path.procfs=/host/proc", "--path.sysfs=/host/sys", "--collector.textfile.directory=/textfile", "--no-collector.netdev", "--no-collector.netstat", "--no-collector.sockstat"]
+    volumes:
+      - /:/host:ro,rslave
+      - /opt/highpass/monitoring/textfile:/textfile:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.5
+    networks: [backend]
+    logging: *logging
+  blackbox:
+    image: prom/blackbox-exporter:v0.29.1
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox.yml"]
+    volumes: ["./prometheus/blackbox.yml:/etc/blackbox.yml:ro"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.5
     networks: [backend]
     logging: *logging
   grafana:

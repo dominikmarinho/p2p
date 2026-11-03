@@ -20,8 +20,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 @SuppressLint("SetJavaScriptEnabled")
-class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, private val enabled: Boolean, private val onStats: (String) -> Unit) {
+class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, requestedEnabled: Boolean, private val onStats: (String) -> Unit) {
     companion object { private val activeGeneration = AtomicLong() }
+    private val enabled = requestedEnabled || playback.optJSONObject("delivery")?.optString("mode") == "p2p-first"
     private val generation = activeGeneration.incrementAndGet()
     val webView = WebView(activity)
     private val handler = Handler(Looper.getMainLooper())
@@ -103,6 +104,8 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, pri
         }
         done.await(2, TimeUnit.SECONDS)
     }
+    fun resume() { if (!closed) handler.post { webView.evaluateJavascript("window.HighpassBridge?.resume?.()", null) } }
+    fun playhead(seconds: Double) { if (!closed && seconds.isFinite() && seconds >= 0) handler.post { if (ready.count == 0L) webView.evaluateJavascript("window.HighpassBridge?.playhead?.($seconds)", null) } }
     fun httpOnly() { if (!closed) handler.post { webView.evaluateJavascript("window.HighpassBridge?.httpOnly?.()", null) } }
     fun http(bytes: Int) { if (!closed && bytes > 0) httpBytes.addAndGet(bytes.toLong()) }
     fun close() {

@@ -9,8 +9,8 @@ export function trafficPercentages(httpBytes: number, p2pBytes: number) {
   return { totalDownloaded, p2pPercentage, httpPercentage: totalDownloaded > 0 ? 100 - p2pPercentage : 0 };
 }
 type EventSource = Pick<Core | HlsJsP2PEngine, 'addEventListener' | 'removeEventListener'>;
-export function trackStats(engine: EventSource, update: (stats: P2PStats) => void) {
-  const peers = new Set<string>(); const stats = { ...initialStats }; let previousDown = 0; let previousUp = 0; let previous = performance.now();
+export function trackStats(engine: EventSource, update: (stats: P2PStats) => void, initial: Partial<P2PStats> = {}) {
+  const peers = new Set<string>(); const stats = { ...initialStats, ...initial, peers: 0 }; let previousDown = stats.p2pDownloaded; let previousUp = stats.p2pUploaded; let previous = performance.now();
   const connected: CoreEventMap['onPeerConnect'] = (peer) => { peers.add(peer.peerId); };
   const closed: CoreEventMap['onPeerClose'] = (peer) => { peers.delete(peer.peerId); };
   const downloaded: CoreEventMap['onChunkDownloaded'] = (bytes, source) => { if (source === 'p2p') stats.p2pDownloaded += bytes; else stats.httpDownloaded += bytes; };

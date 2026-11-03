@@ -2,6 +2,11 @@ package com.highpass.player
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -29,6 +34,10 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var playerView: PlayerView
     private var resumePosition = 0L
     private var fallbackUsed = false
+    private var recoverFile = false
+    @Volatile private var stopped = false
+    private val recoveryHandler = Handler(Looper.getMainLooper())
+    private val recoveryExecutor = Executors.newSingleThreadExecutor()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val root = FrameLayout(this); playerView = PlayerView(this).apply { id = View.generateViewId(); useController = true; isFocusable = true; controllerShowTimeoutMs = 5000 }
@@ -54,12 +63,33 @@ class PlayerActivity : ComponentActivity() {
         engine.addListener(object : Player.Listener { override fun onPlayerError(error: PlaybackException) {
             val direct = playback.optString("directUrl")
             if (!fallbackUsed && direct.isNotEmpty() && direct != playback.optString("url")) {
-                fallbackUsed = true; val position = engine.currentPosition; transport?.httpOnly(); stats.text = "Continuando por HTTP…"
+                fallbackUsed = true; recoverFile = error.errorCode in 2000..2999; val position = engine.currentPosition; transport?.httpOnly(); stats.text = "Continuando por HTTP…"
                 engine.setMediaItem(MediaItem.fromUri(BuildConfig.ENGINE_URL + direct), position); engine.prepare(); engine.playWhenReady = true
             } else { stats.text = "Reprodução indisponível. Volte e selecione novamente."; playerView.showController() }
         } })
         val item = MediaItem.Builder().setUri(Uri.parse(BuildConfig.ENGINE_URL + playback.getString("url"))).setMediaId(playback.getString("swarmId")).apply { if (playback.optBoolean("isHls")) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
         engine.setMediaItem(item, if (playback.optBoolean("isLive")) androidx.media3.common.C.TIME_UNSET else 0L); if (resumePosition > 0) engine.seekTo(resumePosition); engine.prepare(); engine.playWhenReady = true
+        recoveryHandler.postDelayed(object : Runnable {
+            override fun run() {
+                if (stopped) return
+                transport?.playhead(engine.currentPosition / 1000.0)
+                if (fallbackUsed && recoverFile) recoveryExecutor.execute {
+                    val usable = runCatching {
+                        val connection = URL(BuildConfig.ENGINE_URL + playback.getString("url")).openConnection() as HttpURLConnection
+                        connection.connectTimeout = 5000; connection.readTimeout = 5000; connection.setRequestProperty("Authorization", "Bearer $token")
+                        try { connection.responseCode == 200 && connection.inputStream.bufferedReader().use { it.readLine()?.trim() == "#EXTM3U" } } finally { connection.disconnect() }
+                    }.getOrDefault(false)
+                    if (usable) recoveryHandler.post {
+                        if (!stopped && fallbackUsed && player === engine) {
+                            val position = engine.currentPosition; fallbackUsed = false; recoverFile = false; transport?.resume()
+                            engine.setMediaItem(MediaItem.Builder().setUri(BuildConfig.ENGINE_URL + playback.getString("url")).setMimeType(MimeTypes.APPLICATION_M3U8).build(), position)
+                            engine.prepare(); engine.playWhenReady = true
+                        }
+                    }
+                }
+                recoveryHandler.postDelayed(this, 15000)
+            }
+        }, 15000)
         playerView.requestFocus()
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -67,5 +97,5 @@ class PlayerActivity : ComponentActivity() {
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode in listOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)) { playerView.showController(); return true }
         return super.dispatchKeyEvent(event)
     }
-    override fun onStop() { super.onStop(); resumePosition = player?.currentPosition ?: 0; playerView.player = null; bridge?.close(); bridge = null; player?.release(); player = null; finish() }
+    override fun onStop() { super.onStop(); stopped = true; recoveryHandler.removeCallbacksAndMessages(null); recoveryExecutor.shutdownNow(); resumePosition = player?.currentPosition ?: 0; playerView.player = null; bridge?.close(); bridge = null; player?.release(); player = null; finish() }
 }
