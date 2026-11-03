@@ -35,7 +35,12 @@ async function native(kind: 'live' | 'movie' | 'episode'): Promise<{ context: Br
   await page.addInitScript(`window.seedTest={ready:false,id:'',done:false,failed:false,chunks:[],stats:{httpDownloaded:0,p2pDownloaded:0,peers:0}};window.NativeSegments={ready:function(){window.seedTest.ready=true;},stats:function(raw){window.seedTest.stats=JSON.parse(raw);},complete:function(id,chunk,done){if(id===window.seedTest.id){window.seedTest.chunks.push(chunk);window.seedTest.done=done;}},fallback:function(id){if(id===window.seedTest.id)window.seedTest.failed=true;}};`);
   await page.goto(address + '/player/android-bridge.html'); await page.waitForFunction(() => (window as unknown as TestWindow).seedTest.ready);
   const text = await (await context.request.get(address + playback.url)).text(); assert.ok(text.startsWith('#EXTM3U'));
-  await page.evaluate(({ descriptor, text, uri }) => { const target = window as unknown as TestWindow; target.HighpassBridge.init(descriptor, true); target.HighpassBridge.playlist(uri, text); }, { descriptor: playback, text, uri: address + playback.url });
+  // VOD is generated progressively. Start with its first three segments so
+  // this test also exercises the native player's later playlist refresh.
+  const lines = text.split('\n'); let count = 0;
+  const thirdSegment = lines.findIndex((line) => line.endsWith('.ts') && ++count === 3);
+  const initial = kind === 'movie' && thirdSegment >= 0 ? lines.slice(0, thirdSegment + 1).join('\n') : text;
+  await page.evaluate(({ descriptor, text, uri }) => { const target = window as unknown as TestWindow; target.HighpassBridge.init(descriptor, true); target.HighpassBridge.playlist(uri, text); }, { descriptor: playback, text: initial, uri: address + playback.url });
   return { context, page, playback };
 }
 async function ready(swarm: string) {
@@ -82,6 +87,9 @@ try {
     const received = await load(viewer.page, kind, address + target); const expected = await (await viewer.context.request.get(address + target)).body(); assert.equal(hash(received), hash(expected));
     await viewer.page.waitForFunction(() => (window as unknown as TestWindow).seedTest.stats.p2pDownloaded > 0);
     if (kind === 'movie') {
+      // ExoPlayer refreshes an EVENT playlist while the origin keeps producing
+      // segments. Publish that same fresh snapshot before seeking in this Core.
+      await viewer.page.evaluate(({ text, uri }) => (window as unknown as TestWindow).HighpassBridge.playlist(uri, text), { text, uri: address + viewer.playback.url });
       await viewer.page.evaluate(() => (window as unknown as TestWindow).HighpassBridge.playhead(130));
       let warmed = false; for (let attempt = 0; attempt < 100; attempt++) {
         const state = (await app.inject({ url: '/api/admin/seeds', headers: admin })).json<{ streams: { swarm: string; warmPositions: number[] }[] }>();
