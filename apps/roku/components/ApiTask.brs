@@ -15,7 +15,10 @@ sub fetch()
     if req.publicManifest <> true and req.token <> invalid and req.token <> "" then transfer.AddHeader("Authorization", "Bearer " + req.token)
     port = CreateObject("roMessagePort")
     transfer.SetMessagePort(port)
-    if req.body <> invalid
+    if req.method = "DELETE" and req.publicManifest <> true
+        transfer.SetRequest("DELETE")
+        started = transfer.AsyncGetToString()
+    else if req.body <> invalid
         started = transfer.AsyncPostFromString(FormatJson(req.body))
     else
         started = transfer.AsyncGetToString()

@@ -25,7 +25,7 @@ export class NativeSegmentCore {
     enabled = enabled || Boolean(playback.delivery);
     this.retryPeerFailures = enabled && !seeder;
     this.seedStorage = seeder ? new SeedSegmentStorage() : undefined;
-    this.core = new Core({ swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: seeder ? 64 : 32, ...(this.seedStorage ? { customSegmentStorageFactory: () => this.seedStorage! } : {}), p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: enabled && !seeder && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled });
+    this.core = new Core({ swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: seeder ? 64 : 32, ...(this.seedStorage ? { customSegmentStorageFactory: () => this.seedStorage! } : {}), p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: enabled && !seeder && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: !seeder && playback.transport === 'p2p' ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled });
     this.core.setManifestResponseUrl(absoluteUrl(playback.url)); this.core.setIsLive(playback.isLive); this.stats = trackStats(this.core, onStats); this.reporter = seeder ? undefined : new PlaybackReporter(playback, 'bridge', this.stats.snapshot);
     this.policy = !seeder && playback.delivery && enabled ? new DeliveryPolicy(playback, (allowed) => { if (!this.httpMode) { this.core.applyDynamicConfig({ simultaneousHttpDownloads: allowed ? 1 : 0 }); } }) : undefined;
     this.core.addEventListener('onSegmentLoaded', this.downloaded);
@@ -107,7 +107,7 @@ export class NativeSegmentCore {
     return stream ? this.seedStorage?.segmentStoredAt(this.playback.swarmId, stream.streamSwarmId, segment.externalId) : undefined;
   }
   playhead(position: number) { this.policy?.playhead(position); }
-  httpOnly() { if (!this.httpMode) { this.httpMode = true; this.stats.clearPeers(); this.core.applyDynamicConfig({ isP2PDisabled: true, simultaneousHttpDownloads: 0 }); } }
+  httpOnly() { if (this.playback.transport === 'p2p') return; if (!this.httpMode) { this.httpMode = true; this.stats.clearPeers(); this.core.applyDynamicConfig({ isP2PDisabled: true, simultaneousHttpDownloads: 0 }); } }
   resume() { if (this.httpMode) { this.httpMode = false; this.core.applyDynamicConfig({ isP2PDisabled: false, simultaneousHttpDownloads: this.policy ? 0 : 1 }); } }
   destroy() { this.reporter?.destroy(); this.policy?.destroy(); this.core.removeEventListener('onSegmentLoaded', this.downloaded); this.segmentTimes.clear(); this.playlists.clear(); this.stats.destroy(); this.core.destroy(); }
 }

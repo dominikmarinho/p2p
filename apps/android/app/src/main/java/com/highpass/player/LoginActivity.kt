@@ -29,7 +29,7 @@ class LoginActivity : ComponentActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         val form = PlayerTheme.column(this, 28).apply { background = PlayerTheme.shape(this@LoginActivity) }
         if (!wide) form.addView(PlayerTheme.brand(this))
-        form.addView(PlayerTheme.label(this, "BEM-VINDO AO HIGH PASS").apply { setPadding(0, dp(24), 0, dp(12)) }); form.addView(PlayerTheme.text(this, "É só dar o play.", 30f, bold = true))
+        form.addView(PlayerTheme.label(this, "HIGH PASS · ${BuildConfig.TRANSPORT.uppercase()}").apply { setPadding(0, dp(24), 0, dp(12)) }); form.addView(PlayerTheme.text(this, "É só dar o play.", 30f, bold = true))
         form.addView(PlayerTheme.text(this, "Entre com os dados da sua assinatura.", 14f, PlayerTheme.muted).apply { setPadding(0, dp(12), 0, dp(24)) })
         fun input(label: String, secret: Boolean) = EditText(this).apply {
             hint = label; contentDescription = label; isSingleLine = true; textSize = 16f; setTextColor(PlayerTheme.text); setHintTextColor(PlayerTheme.muted)

@@ -1,3 +1,4 @@
+import { PlaybackPresence } from './playback-presence.js';
 import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import type { FastifyInstance } from 'fastify';
@@ -22,8 +23,10 @@ export class PrivateTracker {
   private readonly instance = randomUUID();
   private readonly connections = new Map<string, WebSocket>();
   private readonly subscriber: Redis;
+  private readonly presence: PlaybackPresence;
   private profile: { expires: number; value: EngineConfig } | undefined;
-  constructor(private readonly redis: Redis, private readonly service: IptvService, private readonly metrics: Metrics, private readonly admin: AdminService) {
+  constructor(private readonly redis: Redis, private readonly service: IptvService, private readonly metrics: Metrics, private readonly admin: AdminService, release: (grant: string) => Promise<void> = () => Promise.resolve()) {
+    this.presence = new PlaybackPresence(release);
     this.subscriber = redis.duplicate({ connectionName: 'highpass-private-tracker' });
     this.subscriber.on('error', () => logger.warn('Tracker: subscriber indisponível'));
     this.subscriber.on('message', (_channel, raw) => {
@@ -32,7 +35,7 @@ export class PrivateTracker {
     });
   }
   async start() { await this.subscriber.connect(); await this.subscriber.subscribe(`highpass:tracker:inbox:${this.instance}`); }
-  close() { this.subscriber.disconnect(); }
+  close() { this.presence.close(); this.subscriber.disconnect(); }
   private async configuration(): Promise<EngineConfig> {
     if (this.profile && this.profile.expires > Date.now()) return this.profile.value;
     const value = await this.admin.config(); this.profile = { expires: Date.now() + 5000, value }; return value;
@@ -55,13 +58,15 @@ export class PrivateTracker {
       config: { rateLimit: { max: 100, timeWindow: '1 minute' } },
       onRequest: async (request) => {
         const permission = await service.grant(request.params.grant);
+        if (permission.transport === 'http') throw new AppError(403, 'HTTP_ONLY', 'Cliente exclusivamente HTTP');
         if (digest(clientToken(request)) !== permission.sessionHash) throw new AppError(401, 'TRACKER_OWNER', 'Tracker pertence a outra sessão');
         const origin = request.headers.origin;
         if (!service.isRelayRequest(request) && origin && origin !== new URL(service.env.PUBLIC_ENGINE_URL).origin && !(service.env.NODE_ENV !== 'production' && /^http:\/\/(127\.0\.0\.1|localhost|10\.0\.2\.2):\d+$/.test(origin))) throw new AppError(403, 'TRACKER_ORIGIN', 'Origem não permitida');
       },
     }, (socket, request) => {
       if (app.websocketServer.clients.size > 1000) { socket.close(1013, 'Capacidade atingida'); return; }
-      const connection = randomUUID();
+      const connection = randomUUID(); const viewer = !service.isSeedRequest(request);
+      if (viewer) this.presence.join(request.params.grant, connection);
       this.connections.set(connection, socket); this.metrics.connections.inc();
       const memberships = new Map<string, string>();
       let peerId: string | undefined;
@@ -78,6 +83,7 @@ export class PrivateTracker {
       socket.on('pong', () => { alive = true; }); socket.on('error', () => socket.terminate());
       socket.on('close', () => {
         clearInterval(heartbeat); this.connections.delete(connection); this.metrics.connections.dec();
+        if (viewer) this.presence.leave(request.params.grant, connection);
         void chain.finally(async () => {
           for (const [swarm, id] of memberships) await this.redis.multi().del(`highpass:tracker:peer:${swarm}:${id}`).zrem(`highpass:tracker:swarm:${swarm}`, id).exec();
           if (accountKey) await this.redis.zrem(accountKey, connection);

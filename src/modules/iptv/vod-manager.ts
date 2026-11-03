@@ -77,6 +77,7 @@ export class VodManager {
     app.get<{ Params: { grant: string; file: string } }>('/api/iptv/vod/:grant/:file', { config: { rateLimit: false, disableMetrics: true } }, async (request, reply) => {
       const permission = await this.service.grant(request.params.grant);
       if (digest(clientToken(request)) !== permission.sessionHash) throw new AppError(401, 'MEDIA_OWNER', 'Mídia pertence a outra sessão');
+      if (permission.transport === 'p2p' && request.params.file !== 'index.m3u8' && !this.service.isRelayRequest(request)) throw new AppError(403, 'P2P_ONLY', 'Este cliente recebe vídeo exclusivamente pela rede P2P');
       if (permission.kind === 'live' || !/^(index\.m3u8|chunk\d{6}\.ts)$/.test(request.params.file)) return reply.code(404).send();
       const address = app.server.address(); if (address === null || typeof address === 'string') throw new AppError(503, 'VOD_ADDRESS', 'Servidor indisponível');
       reply.raw.setTimeout(30000);

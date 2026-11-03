@@ -70,8 +70,8 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
   router.get('/categories', { schema: { querystring: z.object({ kind: contentKindDto }) } }, async (request) => service.categories(await service.session(clientToken(request)), request.query.kind));
   router.get('/series/:id', { schema: { params: z.object({ id: z.string().regex(/^\d+$/) }) } }, async (request) => service.episodes(await service.session(clientToken(request)), request.params.id));
   router.get('/epg/:id', { schema: { params: z.object({ id: z.string().regex(/^\d+$/) }) } }, async (request) => service.epg(await service.session(clientToken(request)), request.params.id));
-  router.post('/playback', { schema: { body: z.object({ kind: z.enum(['live', 'movie', 'episode']), id: z.string().regex(/^\d+$/), seriesId: z.string().regex(/^\d+$/).optional(), client: z.enum(['web', 'android', 'roku']).optional() }).strict() } }, async (request) => {
-    const token = clientToken(request); const playback = await service.playback(token, request.body.kind, request.body.id, request.body.seriesId, request.body.client === 'roku');
+  router.post('/playback', { schema: { body: z.object({ kind: z.enum(['live', 'movie', 'episode']), id: z.string().regex(/^\d+$/), seriesId: z.string().regex(/^\d+$/).optional(), client: z.enum(['web', 'android', 'roku']).optional(), transport: z.enum(['http', 'p2p']).optional() }).strict() } }, async (request) => {
+    const token = clientToken(request); const playback = await service.playback(token, request.body.kind, request.body.id, request.body.seriesId, request.body.client === 'roku', request.body.transport);
     if (playback.delivery) {
       const id = playback.delivery.seedPath.split('/').at(-1);
       if (id) void seeds.prepare(app, token, id).catch(() => undefined);
@@ -89,6 +89,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     const { grant, resource } = request.params;
     const permission = await service.grant(grant);
     if (digest(clientToken(request)) !== permission.sessionHash) throw new AppError(401, 'MEDIA_OWNER', 'Mídia pertence a outra sessão');
+    if (permission.transport === 'p2p' && !service.isRelayRequest(request) && service.resourceKind(grant, resource) === 'segment') throw new AppError(403, 'P2P_ONLY', 'Este cliente recebe vídeo exclusivamente pela rede P2P');
     const upstream = await service.resource(grant, resource);
     const address = app.server.address(); const base = address && typeof address !== 'string' ? `http://127.0.0.1:${address.port}` : '';
     const gateway = permission.relay && !service.isRelayRequest(request);
@@ -113,6 +114,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
       if (gateway) await relay.observe(grant, clientToken(request), base, request.url, manifest);
       return reply.type('application/vnd.apple.mpegurl').send(manifest);
     }
+    if (permission.transport === 'p2p' && !service.isRelayRequest(request) && service.resourceKind(grant, resource) !== 'key') { await response.body?.cancel(); throw new AppError(403, 'P2P_ONLY', 'Este cliente recebe vídeo exclusivamente pela rede P2P'); }
     for (const name of ['content-length', 'content-range', 'accept-ranges']) { const value = response.headers.get(name); if (value) reply.header(name, value); }
     if (!response.body) return reply.code(502).send();
     return reply.code(response.status).type(contentType).send(Readable.from(bodyChunks(response.body, async (bytes) => { if (!service.isRelayRequest(request)) { await service.recordHttp(grant, bytes); if (gateway) relay.http(grant, bytes); } })));

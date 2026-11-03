@@ -15,6 +15,7 @@ class ApiFailure(val status: Int, message: String) : IOException(message)
 class EngineApi(context: Context) {
     private val store = SessionStore(context.applicationContext)
     suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): String = withContext(Dispatchers.IO) {
+        if (path == "playback" && method == "POST") body?.put("transport", BuildConfig.TRANSPORT)
         val connection = URL(BuildConfig.ENGINE_URL + "/api/iptv/" + path).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 10000; connection.readTimeout = 15000; connection.requestMethod = method
@@ -34,6 +35,6 @@ class EngineApi(context: Context) {
             text
         } finally { connection.disconnect() }
     }
-    suspend fun json(path: String, method: String = "GET", body: JSONObject? = null) = JSONObject(request(path, method, body))
+    suspend fun json(path: String, method: String = "GET", body: JSONObject? = null) = JSONObject(request(path, method, body)).also { if (path == "playback" && it.optString("transport") != BuildConfig.TRANSPORT) throw ApiFailure(503, "A API não confirmou o transporte deste aplicativo. Verifique a versão do servidor.") }
     suspend fun array(path: String) = JSONArray(request(path))
 }

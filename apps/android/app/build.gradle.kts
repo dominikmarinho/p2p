@@ -8,9 +8,14 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = providers.gradleProperty("clientVersionCode").getOrElse("2").toInt()
-        versionName = providers.gradleProperty("clientVersionName").getOrElse("1.1.1")
+        versionName = providers.gradleProperty("clientVersionName").getOrElse("1.2.0")
         buildConfigField("String", "ENGINE_URL", "\"${providers.gradleProperty("engineUrl").getOrElse("https://p2p.remoto.api.br").trimEnd('/')}\"")
         buildConfigField("String", "XUI_BASE_URL", "\"http://xuione.remoto.api.br\"")
+    }
+    flavorDimensions += "transport"
+    productFlavors {
+        create("http") { dimension = "transport"; buildConfigField("String", "TRANSPORT", "\"http\""); manifestPlaceholders["appLabel"] = "Highpass HTTP" }
+        create("p2p") { dimension = "transport"; applicationIdSuffix = ".p2p"; buildConfigField("String", "TRANSPORT", "\"p2p\""); manifestPlaceholders["appLabel"] = "Highpass P2P" }
     }
     buildFeatures { buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

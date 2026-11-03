@@ -13,6 +13,12 @@ class UpdatePolicyTest {
         }
         assertThrows(IllegalArgumentException::class.java) { UpdatePolicy.validate(release.copy(packageName = "another.app"), "https://p2p.remoto.api.br", "com.highpass.player", 35) }
     }
+    @Test fun keepsHttpAndP2pUpdatesInTheirOwnPackages() {
+        val p2p = release.copy(packageName = "com.highpass.player.p2p", downloadUrl = "/downloads/android/p2p/highpass-2.apk")
+        UpdatePolicy.validate(p2p, "https://p2p.remoto.api.br", "com.highpass.player.p2p", 35)
+        assertThrows(IllegalArgumentException::class.java) { UpdatePolicy.validate(p2p, "https://p2p.remoto.api.br", "com.highpass.player", 35) }
+        assertThrows(IllegalArgumentException::class.java) { UpdatePolicy.validate(release, "https://p2p.remoto.api.br", "com.highpass.player.p2p", 35) }
+    }
     @Test fun rejectsCorruptOrOversizedMetadata() {
         for (item in listOf(release.copy(sha256 = "not-a-hash"), release.copy(size = UpdatePolicy.MAX_APK_BYTES + 1), release.copy(minSdk = 36), release.copy(versionCode = -1))) {
             assertThrows(IllegalArgumentException::class.java) { UpdatePolicy.validate(item, "https://p2p.remoto.api.br", "com.highpass.player", 35) }

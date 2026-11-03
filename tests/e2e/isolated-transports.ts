@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import { promisify } from 'node:util';
+import { execFile as execCallback } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { chromium } from 'playwright';
+import { xuiFixture } from '../helpers/xui-fixture.js';
+import { buildApp } from '../../src/app.js';
+import { loadEnvironment } from '../../src/config/env.js';
+import type { Playback } from '../../apps/webplayer/src/api.js';
+if (process.env.NODE_ENV !== 'test') throw new Error('NODE_ENV=test obrigatório');
+const folder = await mkdtemp(join(tmpdir(), 'highpass-isolated-'));
+const execFile = promisify(execCallback);
+await execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=12', '-t', '48', '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '24', '-movflags', '+faststart', join(folder, 'movie.mp4')]);
+await execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', join(folder, 'movie.mp4'), '-c', 'copy', '-f', 'hls', '-hls_time', '2', '-hls_list_size', '8', '-hls_segment_filename', join(folder, 'chunk%d.ts'), join(folder, 'index.m3u8')]);
+const source = xuiFixture(folder); const origin = await source.listen({ host: '127.0.0.1', port: 0 });
+const app = buildApp(loadEnvironment({ ...process.env, XUI_BASE_URL: origin, XUI_ALLOW_HTTP: 'true', P2P_DELIVERY_ENABLED: 'true', P2P_SEED_ENABLED: 'true', RTC_ICE_SERVERS: '[]', VOD_CACHE_DIR: folder, RATE_LIMIT_MAX: '10000', RATE_LIMIT_NAMESPACE: `isolated:${randomUUID()}:` }));
+const offlineSource = xuiFixture(folder); const offlineOrigin = await offlineSource.listen({ host: '127.0.0.1', port: 0 });
+const offline = buildApp(loadEnvironment({ ...process.env, XUI_BASE_URL: offlineOrigin, XUI_ALLOW_HTTP: 'true', P2P_DELIVERY_ENABLED: 'true', P2P_SEED_ENABLED: 'false', RTC_ICE_SERVERS: '[]', RATE_LIMIT_MAX: '10000', RATE_LIMIT_NAMESPACE: `offline:${randomUUID()}:` }));
+const address = await app.listen({ host: '127.0.0.1', port: 0 }); const offAddress = await offline.listen({ host: '127.0.0.1', port: 0 });
+const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'] });
+try {
+  const http = await browser.newContext(); const page = await http.newPage(); const httpCalls: string[] = [];
+  page.on('request', (request) => httpCalls.push(request.url()));
+  await page.addInitScript(() => { Object.defineProperty(window, 'RTCPeerConnection', { value: class { constructor() { throw new Error('HTTP client must not create WebRTC'); } } }); });
+  await http.request.post(address + '/api/iptv/login', { data: { username: 'alice', password: 'secret-line' } });
+  await page.goto(address + '/player/http/'); await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
+  await page.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 1, undefined, { timeout: 20000 });
+  assert.ok(!httpCalls.some((url) => /\/seed\/|\/tracker\//.test(url)), 'HTTP não inicia seeds nem tracker');
+  const httpGrant = await (await http.request.post(address + '/api/iptv/playback', { data: { kind: 'live', id: '1', transport: 'http' } })).json() as Playback;
+  assert.equal(httpGrant.delivery, undefined); assert.equal(httpGrant.transport, 'http');
+  const httpId = httpGrant.trackerPath.split('/').at(-1);
+  assert.equal((await http.request.post(`${address}/api/iptv/seed/${httpId}`, { data: { position: 0 } })).status(), 403);
+  await http.close();
+  console.log('HTTP isolado: vídeo decodificado com WebRTC proibido, zero seed/tracker e criação de seed rejeitada');
+  const p2p = await browser.newContext(); await p2p.request.post(address + '/api/iptv/login', { data: { username: 'bob', password: 'secret-line' } });
+  for (const kind of ['live', 'movie', 'episode'] as const) {
+    const descriptor = await (await p2p.request.post(address + '/api/iptv/playback', { data: { kind, id: kind === 'live' ? '1' : kind === 'movie' ? '2' : '4', transport: 'p2p', ...(kind === 'episode' ? { seriesId: '3' } : {}) } })).json() as Playback;
+    assert.equal(descriptor.delivery?.mode, 'p2p-only');
+    const text = await (await p2p.request.get(address + descriptor.url)).text(); const segment = text.split('\n').find((line) => line.startsWith('/api/iptv/media/') || line.endsWith('.ts')); assert.ok(segment);
+    assert.equal((await p2p.request.get(new URL(segment, address + descriptor.url).href)).status(), 403, `Servidor bloqueia fallback HTTP: ${kind}`);
+    if (kind !== 'live') assert.equal((await p2p.request.get(address + descriptor.directUrl)).status(), 403, 'Arquivo direto também bloqueado');
+    assert.ok(descriptor.delivery); await p2p.request.delete(address + descriptor.delivery.seedPath);
+  }
+  const screen = await p2p.newPage(); let downloadedHttpVideo = 0;
+  screen.on('response', (response) => { if (/video\//.test(response.headers()['content-type'] ?? '')) downloadedHttpVideo++; });
+  screen.on('console', (message) => { if (message.type() === 'error') console.log('browser:', message.text()); }); screen.on('pageerror', (error) => console.log('pageerror:', error.message));
+  await screen.goto(address + '/player/p2p/'); const started = Date.now(); await screen.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
+  try { await screen.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 1, undefined, { timeout: 35000 }); } catch (error) { console.log('seed state', (await app.inject({ url: '/api/admin/seeds', headers: { 'x-api-key': 'local-admin-key-change-before-production' } })).body); console.log('player', await screen.locator('.video-shell').innerText()); throw error; }
+  await screen.waitForFunction(() => Number(document.querySelector('[data-testid="p2p-percentage"]')?.textContent?.replace('%', '')) > 99);
+  assert.equal(downloadedHttpVideo, 0); assert.equal(await screen.getByTestId('http-percentage').textContent(), '0.0%');
+  console.log(`P2P isolado: primeiro vídeo decodificado em ${Date.now() - started} ms, 100% P2P e zero respostas HTTP de vídeo`);
+  await p2p.close();
+  const blocked = await browser.newContext(); await blocked.request.post(offAddress + '/api/iptv/login', { data: { username: 'alice', password: 'secret-line' } });
+  const unavailable = await blocked.newPage(); const forbidden: string[] = [];
+  unavailable.on('response', (response) => { if (/video\//.test(response.headers()['content-type'] ?? '')) forbidden.push(response.url()); });
+  await unavailable.goto(offAddress + '/player/p2p/'); await unavailable.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click(); await unavailable.waitForTimeout(10000);
+  assert.equal(await unavailable.locator('video').evaluate((video) => (video as HTMLVideoElement).currentTime), 0); assert.deepEqual(forbidden, []);
+  console.log('Seed offline: cliente P2P permanece sem vídeo, sem recorrer a HTTP');
+  await blocked.close();
+} finally { await browser.close(); await offline.close(); await app.close(); await source.close(); await offlineSource.close(); await rm(folder, { recursive: true, force: true }); }

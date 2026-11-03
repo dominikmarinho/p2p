@@ -210,6 +210,7 @@ sub onItem()
             m.status.text = "Gateway P2P automático com HTTP de contingência. Roku recebe HTTP do gateway."
         end if
     else if entry.kind = "account"
+        releasePlayback()
         request("logout", "onLoggedOut", {})
     else if entry.kind = "series"
         m.seriesId = entry.id
@@ -236,9 +237,24 @@ sub onEpisodes(event as Object)
     end for
     showItems(episodes)
 end sub
+sub releasePlayback()
+    if m.playback = invalid then return
+    previous = m.playback
+    m.playback = invalid
+    if previous.delivery = invalid or previous.delivery.seedPath = invalid then return
+    task = CreateObject("roSGNode", "ApiTask")
+    task.request = { path: previous.delivery.seedPath.mid(10), token: m.token, method: "DELETE" }
+    task.observeField("result", "onPlaybackReleased")
+    m.tasks.push(task)
+    task.control = "RUN"
+end sub
+sub onPlaybackReleased()
+    cleanupTasks()
+end sub
 sub onPlayback(event as Object)
     result = event.getData()
     if not result.ok then m.status.text = result.error: return
+    releasePlayback()
     m.playback = result.data
     m.fallbackUsed = false
     content = CreateObject("roSGNode", "ContentNode")
@@ -292,6 +308,11 @@ sub onStats(event as Object)
     m.badge.text = "HTTP " + http.toStr() + "% · P2P " + p2p.toStr() + "% · " + value.peers.toStr() + " peers · " + (value.totalDownloaded / 1048576).toStr() + " MB (gateway)"
 end sub
 sub onVideoState()
+    if m.video.state = "finished"
+        m.timer.control = "stop"
+        releasePlayback()
+        return
+    end if
     if m.video.state = "playing" and m.pendingSeek > 0
         m.video.seek = m.pendingSeek
         m.pendingSeek = 0
@@ -328,6 +349,7 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
     if not press then return false
     if m.video.visible
         if key = "back"
+            releasePlayback()
             m.video.control = "stop"
             m.video.visible = false
             m.badge.visible = false

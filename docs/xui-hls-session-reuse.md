@@ -21,3 +21,13 @@ sudo cat /opt/highpass/access.txt
 Após publicar, recarregue o WebPlayer e o painel para receber os assets novos. No Android, encerre e abra novamente a reprodução para carregar a ponte atualizada; a versão distribuída também aparece em Configurações → Verificar atualizações. O APK conserva o identificador e o certificado existentes.
 
 Validações incluem 80 recargas usando uma única abertura da entrada, busca simultânea do mesmo segmento por seed/contingência, expiração, isolamento entre contas, Range, limites de memória, cookies e redirects, prioridade P2P durante aquecimento, recuperação automática e concorrência de navegação no painel. A conferência em produção mede separadamente primeiro frame, transporte, pausas e conexões ativas do XUI durante reprodução prolongada.
+
+## Encerramento incorporado na versão 1.2.0
+
+Fechar ou navegar para fora do WebPlayer libera o lease por `pagehide`/`keepalive`; apenas ocultar uma aba que reproduz não encerra a transmissão. O retorno pelo cache de navegação retoma o heartbeat. Android envia uma requisição nativa autenticada antes de destruir a WebView; Roku libera o gateway ao voltar ou terminar o vídeo. O tracker agrega os sockets de vídeo/áudio e só considera o player desconectado após fechar seu último socket, com um pequeno intervalo para reconexão.
+
+O último espectador faz o worker parar imediatamente; outros espectadores ativos continuam atendidos. Um processo que desaparece sem aviso perde seu lease após 15 segundos sem heartbeat. O gateway Roku sem atividade também é encerrado. Cancelar um seed ainda em inicialização fecha seu contexto para impedir que um navegador órfão volte a consultar a origem.
+
+A ausência de novas requisições da engine e a remoção da linha no painel XUI são verificações diferentes: o XUI pode manter registros HLS até seu timeout interno. A engine não mata sessões de outras linhas nem altera a configuração de timeout do XUI. A sessão HLS resolvida permanece brevemente em cache para que voltar ao canal não reabra a autenticação desnecessariamente.
+
+No Android, a reprodução abre em paisagem e modo imersivo, ocupa a janela inteira e preserva a proporção da imagem (`FIT`). Material 4:3 em tela 16:9 pode apresentar faixas laterais; esticar ou cortar a imagem não é aplicado. MENU/Voltar permite acessar canais e informações. A linha transparente de tráfego continua no topo.

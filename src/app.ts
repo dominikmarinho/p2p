@@ -75,7 +75,7 @@ export function buildApp(env: Environment) {
   const relay = new RokuRelay(iptv);
   const seeds = new SeedManager(iptv, relay, metrics);
   const vod = new VodManager(iptv, relay);
-  const tracker = new PrivateTracker(redis, iptv, metrics, admin);
+  const tracker = new PrivateTracker(redis, iptv, metrics, admin, (grant) => seeds.detach(grant));
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.addHook('onReady', async () => {

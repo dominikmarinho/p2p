@@ -14,6 +14,9 @@ import android.webkit.CookieManager
 import org.json.JSONObject
 import java.util.UUID
 import java.net.URL
+import java.net.HttpURLConnection
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -22,7 +25,12 @@ import java.util.concurrent.atomic.AtomicLong
 
 @SuppressLint("SetJavaScriptEnabled")
 class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, requestedEnabled: Boolean, private val onStats: (String) -> Unit) {
-    companion object { private val activeGeneration = AtomicLong() }
+    companion object {
+        private val activeGeneration = AtomicLong()
+        private val seedReleases = ThreadPoolExecutor(1, 1, 10, TimeUnit.SECONDS, ArrayBlockingQueue<Runnable>(8), { task -> Thread(task, "highpass-seed-release").apply { isDaemon = true } }, ThreadPoolExecutor.DiscardOldestPolicy()).apply { allowCoreThreadTimeOut(true) }
+    }
+    private val releaseToken = authToken
+    private val releasePath = playback.optJSONObject("delivery")?.optString("seedPath")?.takeIf { it.matches(Regex("^/api/iptv/seed/[a-f0-9]{64}$")) }
     private val enabled = requestedEnabled || playback.optJSONObject("delivery")?.optString("mode") == "p2p-first"
     private val generation = activeGeneration.incrementAndGet()
     val webView = WebView(activity)
@@ -90,6 +98,7 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, req
         CookieManager.getInstance().setCookie(BuildConfig.ENGINE_URL, "HP_SESSION=$authToken; HttpOnly; SameSite=Strict; Path=/api/iptv$secure") { webView.loadUrl(BuildConfig.ENGINE_URL + "/player/android-bridge.html") }
         handler.postDelayed(httpTicker, 1000)
     }
+    fun isVideoSegment(uri: String) = segmentUris.contains(uri)
     fun load(uri: String, position: Long, length: Long): ByteArray? {
         if (!enabled || closed || !segmentUris.contains(uri) || Looper.myLooper() == Looper.getMainLooper() || !ready.await(750, TimeUnit.MILLISECONDS) || requests.size >= 4) return null
         if (closed || !initialized) return null
@@ -128,10 +137,28 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, req
     fun playhead(seconds: Double) { if (!closed && seconds.isFinite() && seconds >= 0) handler.post { if (ready.count == 0L) webView.evaluateJavascript("window.HighpassBridge?.playhead?.($seconds)", null) } }
     fun httpOnly() { if (!closed) handler.post { webView.evaluateJavascript("window.HighpassBridge?.httpOnly?.()", null) } }
     fun http(bytes: Int) { if (!closed && bytes > 0) httpBytes.addAndGet(bytes.toLong()) }
-    fun close() {
+    private fun detachSeed() {
+        val path = releasePath ?: return
+        seedReleases.execute {
+            runCatching {
+                val connection = URL(BuildConfig.ENGINE_URL + path).openConnection() as HttpURLConnection
+                connection.instanceFollowRedirects = false; connection.requestMethod = "DELETE"
+                connection.connectTimeout = 1000; connection.readTimeout = 1000
+                connection.setRequestProperty("Authorization", "Bearer $releaseToken")
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true; connection.setFixedLengthStreamingMode(2)
+                try { connection.outputStream.use { it.write(byteArrayOf(123, 125)) }; val status = connection.responseCode; if (status in 200..299) connection.inputStream.close() else connection.errorStream?.close() }
+                finally { connection.disconnect() }
+            }
+        }
+    }
+    fun close(releaseSeed: Boolean = true) {
+        if (closed) return
+        if (releaseSeed) detachSeed()
         closed = true; pendingPlaylists.clear(); segmentUris.clear(); ready.countDown(); requests.values.forEach { it.future.complete(null) }; requests.clear()
         handler.removeCallbacks(httpTicker)
-        webView.evaluateJavascript("window.HighpassBridge?.destroy()", null); webView.removeJavascriptInterface("NativeSegments"); webView.stopLoading(); webView.destroy()
+        if (releaseSeed) webView.evaluateJavascript("window.HighpassBridge?.destroy()", null)
+        webView.removeJavascriptInterface("NativeSegments"); webView.stopLoading(); webView.destroy()
         if (activeGeneration.get() == generation) CookieManager.getInstance().removeSessionCookies(null)
     }
 }

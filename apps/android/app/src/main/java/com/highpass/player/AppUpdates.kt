@@ -20,7 +20,7 @@ class AppUpdates(private val context: Context) {
         instanceFollowRedirects = false; connectTimeout = 8000; readTimeout = 15000; setRequestProperty("Cache-Control", "no-cache")
     }
     suspend fun check(): ClientRelease = withContext(Dispatchers.IO) {
-        val connection = connect("/downloads/android/latest.json")
+        val connection = connect(if (BuildConfig.TRANSPORT == "p2p") "/downloads/android/p2p/latest.json" else "/downloads/android/latest.json")
         try {
             if (connection.responseCode != 200) throw IOException("Não foi possível consultar atualizações. Tente novamente.")
             val bytes = connection.inputStream.use { input ->

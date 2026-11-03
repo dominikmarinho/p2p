@@ -106,6 +106,7 @@ highpass-p2p-engine/
 │       │   ├── api.ts
 │       │   ├── main.tsx
 │       │   ├── styles.css
+│       │   ├── transport.ts
 │       │   └── tv-navigation.ts
 │       ├── android-bridge.html
 │       ├── index.html
@@ -114,8 +115,11 @@ highpass-p2p-engine/
 │       └── vite.config.ts
 ├── docs/
 │   ├── previews/
+│   │   ├── android-fullscreen.png
 │   │   ├── android-home-tv.png
+│   │   ├── android-http.png
 │   │   ├── android-live-tv.png
+│   │   ├── android-p2p.png
 │   │   ├── vod-traffic.png
 │   │   ├── webplayer-live.png
 │   │   ├── webplayer-login.png
@@ -125,6 +129,8 @@ highpass-p2p-engine/
 │   ├── client-release-1.1.md
 │   ├── ecosystem.md
 │   ├── file-tree.md
+│   ├── hls-vs-ts-hmac.md
+│   ├── isolated-clients.md
 │   ├── p2p-observability.md
 │   ├── production.md
 │   ├── seeds-production.md
@@ -216,6 +222,7 @@ highpass-p2p-engine/
 │   │   │   ├── iptv.routes.ts
 │   │   │   ├── iptv.service.ts
 │   │   │   ├── origin-media.ts
+│   │   │   ├── playback-presence.ts
 │   │   │   ├── player-ui.ts
 │   │   │   ├── roku-relay.ts
 │   │   │   ├── seed-manager.ts
@@ -248,8 +255,10 @@ highpass-p2p-engine/
 │   │   ├── android-fixture.ts
 │   │   ├── container-seed.ts
 │   │   ├── iptv-browser.ts
+│   │   ├── isolated-transports.ts
 │   │   ├── native-vod-seek.ts
 │   │   ├── seed-delivery.ts
+│   │   ├── seed-lifecycle.ts
 │   │   └── vod-relay.ts
 │   ├── helpers/
 │   │   └── xui-fixture.ts
@@ -270,6 +279,7 @@ highpass-p2p-engine/
 │       ├── control-plane.test.ts
 │       ├── delivery-policy.test.ts
 │       ├── origin-media.test.ts
+│       ├── playback-presence.test.ts
 │       ├── resources.test.ts
 │       ├── security.test.ts
 │       ├── seed-lifecycle.test.ts
@@ -296,5 +306,3 @@ highpass-p2p-engine/
 ├── tsconfig.json
 └── vitest.config.ts
 ```
-
-Builds, credenciais, node_modules, APKs e pacotes TV são artefatos ignorados pelo Git. As migrations SQL geradas ficam em drizzle/.

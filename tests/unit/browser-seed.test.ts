@@ -23,16 +23,16 @@ function fixture(ended = false) {
 describe('seed sem repetição de downloads nem sessões por segundo', () => {
   it('reutiliza segmentos e respeita metade do TARGETDURATION em recargas', async () => {
     const source = fixture(); seed = new BrowserSeed(source.core, playback);
-    await vi.advanceTimersByTimeAsync(1); expect(source.load).toHaveBeenCalledTimes(4); expect(source.fetcher).toHaveBeenCalledTimes(1); expect(seed.status().ready).toBe(true);
-    await vi.advanceTimersByTimeAsync(5000); expect(source.load).toHaveBeenCalledTimes(4); expect(source.fetcher).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); expect(source.load).toHaveBeenCalledTimes(6); expect(source.fetcher).toHaveBeenCalledTimes(1); expect(seed.status().ready).toBe(true);
+    await vi.advanceTimersByTimeAsync(5000); expect(source.load).toHaveBeenCalledTimes(6); expect(source.fetcher).toHaveBeenCalledTimes(1);
     source.advanceSequence(); await vi.advanceTimersByTimeAsync(1100);
-    expect(source.fetcher).toHaveBeenCalledTimes(2); expect(source.load).toHaveBeenCalledTimes(5); expect(seed.status().loads).toBe(5);
+    expect(source.fetcher).toHaveBeenCalledTimes(2); expect(source.load).toHaveBeenCalledTimes(7); expect(seed.status().loads).toBe(7);
     seed.targets([]); await vi.advanceTimersByTimeAsync(15000); expect(source.fetcher).toHaveBeenCalledTimes(2); expect(seed.status().ready).toBe(false);
   });
   it('não baixa a mesma sequência de novo quando somente o token da URL muda', async () => {
     const source = fixture(); seed = new BrowserSeed(source.core, playback); await vi.advanceTimersByTimeAsync(1);
     source.rotateTicket(); await vi.advanceTimersByTimeAsync(6100);
-    expect(source.fetcher).toHaveBeenCalledTimes(2); expect(source.load).toHaveBeenCalledTimes(4); expect(seed.status().loads).toBe(4);
+    expect(source.fetcher).toHaveBeenCalledTimes(2); expect(source.load).toHaveBeenCalledTimes(6); expect(seed.status().loads).toBe(6);
   });
   it('mantém VOD pronto pelo cache e atende um novo playhead sem refazer a playlist final', async () => {
     const source = fixture(true); seed = new BrowserSeed(source.core, { ...playback, isLive: false }); await vi.advanceTimersByTimeAsync(1);
@@ -46,13 +46,13 @@ describe('seed sem repetição de downloads nem sessões por segundo', () => {
     const initialArrival = seed.status().lastSegmentAt;
     await vi.advanceTimersByTimeAsync(30000); expect(seed.status().lastSegmentAt).toBe(initialArrival);
     source.prefetchNext(); const prefetchedAt = Date.now(); await vi.advanceTimersByTimeAsync(6000);
-    expect(seed.status().lastSegmentAt).toBe(prefetchedAt); expect(seed.status().ready).toBe(true); expect(source.load).toHaveBeenCalledTimes(4);
+    expect(seed.status().lastSegmentAt).toBe(prefetchedAt); expect(seed.status().ready).toBe(true); expect(source.load).toHaveBeenCalledTimes(6);
     await vi.advanceTimersByTimeAsync(34000); expect(seed.status().ready).toBe(false); expect(seed.status().lastSegmentAt).toBe(prefetchedAt);
   });
   it('retira prontidão quando o canal não produz novos segmentos, sem rebaixar contadores de falha', async () => {
     const source = fixture(); seed = new BrowserSeed(source.core, playback); await vi.advanceTimersByTimeAsync(1);
     expect(seed.status().ready).toBe(true); await vi.advanceTimersByTimeAsync(34000);
-    expect(seed.status().ready).toBe(false); expect(seed.status().loads).toBe(4); expect(seed.status().failures).toBe(0);
+    expect(seed.status().ready).toBe(false); expect(seed.status().loads).toBe(6); expect(seed.status().failures).toBe(0);
     expect(source.fetcher.mock.calls.length).toBeLessThanOrEqual(7);
   });
 });

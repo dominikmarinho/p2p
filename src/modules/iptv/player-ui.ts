@@ -17,6 +17,6 @@ export function playerUi(app: FastifyInstance): Promise<void> {
     } catch { return reply.code(relative === 'index.html' ? 503 : 404).send({ message: 'WebPlayer indisponível; execute npm run build:web' }); }
   };
   app.get('/player', { config: { rateLimit: false, disableMetrics: true } }, async (_request, reply) => serve('index.html', reply));
-  app.get<{ Params: { '*': string } }>('/player/*', { config: { rateLimit: false, disableMetrics: true } }, async (request, reply) => serve(request.params['*'] || 'index.html', reply));
+  app.get<{ Params: { '*': string } }>('/player/*', { config: { rateLimit: false, disableMetrics: true } }, async (request, reply) => serve(request.params['*']?.endsWith('/') ? request.params['*'] + 'index.html' : request.params['*'] === 'http' || request.params['*'] === 'p2p' ? request.params['*'] + '/index.html' : request.params['*'] || 'index.html', reply));
   return Promise.resolve();
 }

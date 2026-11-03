@@ -1,3 +1,5 @@
+Clientes separados (1.2.0): [Web/Android HTTP e P2P](docs/isolated-clients.md).
+
 # Highpass — ecossistema IPTV P2P
 
 Engine Fastify, painel administrativo, WebPlayer React e aplicativo Kotlin para Android TV/celular e clientes Tizen, webOS e Roku. Origem: **http://xuione.remoto.api.br**. Engine pública configurada: **https://p2p.remoto.api.br**. Os clientes solicitam somente **usuário e senha da linha XUI**.
@@ -152,3 +154,5 @@ Isso valida/empacota BrightScript e gera o IPK webOS. Tizen contém launcher/con
 Aplicativos 1.1: [layout, atualização, recuperação P2P e publicação dos APKs](docs/client-release-1.1.md).
 
 Correção 1.1.1: [reutilização de sessão HLS, prioridade P2P e diagnóstico das conexões](docs/xui-hls-session-reuse.md).
+
+[HLS, MPEG-TS e HMAC: comparação e resultados observados](docs/hls-vs-ts-hmac.md).

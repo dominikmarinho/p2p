@@ -81,6 +81,34 @@ class PublishClientsTests(unittest.TestCase):
         self.publish(False)
         self.assertEqual(json.loads((self.destination / 'android/latest.json').read_text())['versionCode'], 2)
 
+    def prepare_p2p(self, code=2):
+        directory = self.source / 'android/p2p'
+        directory.mkdir(exist_ok=True)
+        payload = b'p2p-signed-release'
+        (directory / f'highpass-{code}.apk').write_bytes(payload)
+        metadata = {'applicationId': 'com.highpass.player.p2p', 'versionCode': code, 'versionName': '1.2.0', 'sizeBytes': len(payload), 'downloadUrl': f'/downloads/android/p2p/highpass-{code}.apk', 'sha256': hashlib.sha256(payload).hexdigest(), 'signingCertificateSha256': 'a' * 64}
+        (directory / 'latest.json').write_text(json.dumps(metadata))
+        path = self.source / 'clients.json'
+        clients = json.loads(path.read_text()); clients['androidP2p'] = metadata
+        path.write_text(json.dumps(clients))
+        return metadata
+
+    def test_two_variants_keep_independent_packages_and_feeds(self):
+        http = self.prepare(); p2p = self.prepare_p2p()
+        self.publish(); self.publish()
+        self.assertEqual(json.loads((self.destination / 'android/latest.json').read_text()), http)
+        self.assertEqual(json.loads((self.destination / 'android/p2p/latest.json').read_text()), p2p)
+        self.assertEqual((self.destination / 'android/p2p/highpass-latest.apk').read_bytes(), b'p2p-signed-release')
+        self.assertNotEqual(http['applicationId'], p2p['applicationId'])
+
+    def test_bad_p2p_variant_does_not_advance_http_feed(self):
+        self.prepare(); self.prepare_p2p(); self.publish()
+        self.prepare(code=3); self.prepare_p2p(code=3)
+        (self.source / 'android/p2p/highpass-3.apk').write_bytes(b'invalid')
+        self.publish(False)
+        self.assertEqual(json.loads((self.destination / 'android/latest.json').read_text())['versionCode'], 2)
+        self.assertEqual(json.loads((self.destination / 'android/p2p/latest.json').read_text())['versionCode'], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

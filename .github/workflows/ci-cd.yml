@@ -107,14 +107,15 @@ jobs:
       - name: Build and test Android with a monotonic distribution version
         run: |
           version_code=$((10000 + GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
-          apps/android/gradlew -p apps/android :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest -PclientVersionCode="$version_code" --no-daemon
+          apps/android/gradlew -p apps/android :app:assembleDebug :app:assembleRelease :app:testHttpDebugUnitTest :app:testP2pDebugUnitTest -PclientVersionCode="$version_code" --no-daemon
       - name: Package verified Android update
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           EXPECTED_CERT: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
           test -n "$EXPECTED_CERT"
-          python3 scripts/package-android-release.py --apk apps/android/app/build/outputs/apk/release/app-release.apk --output client-release --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --expected-cert "$EXPECTED_CERT" --revision "$GITHUB_SHA"
+          python3 scripts/package-android-release.py --variant http --apk apps/android/app/build/outputs/apk/http/release/app-http-release.apk --output client-release --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --expected-cert "$EXPECTED_CERT" --revision "$GITHUB_SHA"
+          python3 scripts/package-android-release.py --variant p2p --apk apps/android/app/build/outputs/apk/p2p/release/app-p2p-release.apk --output client-release --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --expected-cert "$EXPECTED_CERT" --revision "$GITHUB_SHA"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
@@ -127,7 +128,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: highpass-android-debug
-          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          path: apps/android/app/build/outputs/apk/*/debug/*.apk
           retention-days: 14
   build-push:
     needs: [tests, android]
@@ -206,7 +207,7 @@ jobs:
           npm run build:tv
           mkdir -p client-release/tv
           cp artifacts/highpass-roku.zip artifacts/highpass-tizen-unsigned.wgt client-release/tv/
-          cp artifacts/br.api.remoto.highpass_1.1.0_all.ipk client-release/tv/highpass-webos.ipk
+          cp artifacts/br.api.remoto.highpass_1.1.2_all.ipk client-release/tv/highpass-webos.ipk
       - name: Transfer client packages through verified SSH
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:

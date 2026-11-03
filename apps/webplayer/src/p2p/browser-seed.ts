@@ -68,11 +68,11 @@ export class BrowserSeed {
         const snapshot = uri === root ? rootSnapshot : await this.manifest(uri);
         this.freshnessMs = Math.max(15000, snapshot.targetMs * 3);
         const segments = this.core.seedSegments(uri); const selected = new Set<number>(); const targets = this.targetsForCycle(); const completed = new Set<number>();
-        if (this.playback.isLive) for (let index = Math.max(0, segments.length - 4); index < segments.length; index++) selected.add(index);
-        else for (const position of targets) {
+        for (const position of targets) {
           const index = segments.findIndex((segment) => segment.endTime > position);
           if (index >= 0) for (let next = index; next < Math.min(segments.length, index + 3); next++) selected.add(next);
         }
+        if (this.playback.isLive) for (let index = Math.max(0, segments.length - 4); index < segments.length; index++) selected.add(index);
         for (const index of [...selected].slice(0, 24)) {
           if (this.closed || this.paused) break;
           const segment = segments[index]; if (!segment) continue;

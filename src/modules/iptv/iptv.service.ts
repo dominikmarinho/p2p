@@ -153,7 +153,7 @@ export class IptvService {
     const result = object(await this.playerApi(session, 'get_short_epg', { stream_id: id, limit: '8' }));
     return Array.isArray(result.epg_listings) ? result.epg_listings.slice(0, 8).map((raw) => { const row = object(raw); return { title: Buffer.from(string(row.title), 'base64').toString('utf8'), description: Buffer.from(string(row.description), 'base64').toString('utf8'), start: string(row.start), end: string(row.end) }; }) : [];
   }
-  async playback(token: string, kind: 'live' | 'movie' | 'episode', id: string, seriesId?: string, relay = false) {
+  async playback(token: string, kind: 'live' | 'movie' | 'episode', id: string, seriesId?: string, relay = false, transport?: 'http' | 'p2p') {
     const session = await this.session(token);
     let extension = 'm3u8';
     if (kind === 'episode') {
@@ -165,7 +165,7 @@ export class IptvService {
       if (!item) throw new AppError(404, 'CONTENT_NOT_FOUND', 'Conteúdo indisponível'); if (kind === 'movie') extension = item.extension;
     }
     const grantId = randomBytes(32).toString('hex');
-    const grant: MediaGrant = { accountId: session.accountId, relay, sessionHash: digest(token), kind, id, extension, swarmId: digest(`${this.origin().href}:${kind}:${id}`), expiresAt: session.expiresAt };
+    const grant: MediaGrant = { accountId: session.accountId, relay, transport, sessionHash: digest(token), kind, id, extension, swarmId: digest(`${this.origin().href}:${kind}:${id}`), expiresAt: session.expiresAt };
     const ttl = Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000)); const grantHash = digest(grantId);
     const created = await this.redis.eval("if redis.call('EXISTS',KEYS[3])==0 then return 0 end; redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); redis.call('ZADD',KEYS[2],ARGV[3],ARGV[4]); redis.call('EXPIRE',KEYS[2],ARGV[2]); local excess=redis.call('ZCARD',KEYS[2])-4; if excess>0 then local ids=redis.call('ZRANGE',KEYS[2],0,excess-1); for _,id in ipairs(ids) do redis.call('DEL','highpass:media:'..id); redis.call('ZREM',KEYS[2],id) end end; return 1", 3, `highpass:media:${grantHash}`, `highpass:media-session:${grant.sessionHash}`, `highpass:client:${grant.sessionHash}`, JSON.stringify(grant), ttl, Date.now(), grantHash);
     if (created !== 1) throw new AppError(401, 'SESSION_EXPIRED', 'Sessão encerrada');
@@ -175,13 +175,13 @@ export class IptvService {
     const grant = await this.grant(grantId); const session = await this.sessionByHash(grant.sessionHash);
     const folder = grant.kind === 'episode' ? 'series' : grant.kind === 'movie' ? 'movie' : 'live';
     const url = new URL(`${folder}/${encodeURIComponent(session.username)}/${encodeURIComponent(session.password)}/${grant.id}.${grant.extension}`, this.origin());
-    const directUrl = this.resourceUrl(grantId, url);
+    const directUrl = this.resourceUrl(grantId, url, grant.extension === 'm3u8' ? 'playlist' : 'segment');
     const iceServers = [...this.env.RTC_ICE_SERVERS];
     if (this.env.TURN_URLS && this.env.TURN_SHARED_SECRET) {
       const username = `${Math.ceil(grant.expiresAt / 1000)}:${session.accountId.slice(0, 16)}`;
       iceServers.push({ urls: this.env.TURN_URLS.split(',').map((value) => value.trim()).filter(Boolean), username, credential: createHmac('sha1', this.env.TURN_SHARED_SECRET).update(username).digest('base64') });
     }
-    return { url: grant.kind !== 'live' && grant.extension !== 'm3u8' ? `/api/iptv/vod/${grantId}/index.m3u8` : directUrl, directUrl, sourceFormat: grant.extension, telemetryPath: `/api/iptv/telemetry/${grantId}`, statsPath: `/api/iptv/traffic/${grantId}`, trackerPath: `/api/iptv/tracker/${grantId}`, swarmId: grant.swarmId, expiresAt: grant.expiresAt, isLive: grant.kind === 'live', isHls: true, iceServers, config: await this.configuration(), ...(this.env.P2P_DELIVERY_ENABLED ? { delivery: { mode: 'p2p-first' as const, seedPath: `/api/iptv/seed/${grantId}`, segmentTimeoutMs: this.env.P2P_SEGMENT_TIMEOUT_MS, recoveryMs: 5000 } } : {}) };
+    return { transport: grant.transport, url: grant.kind !== 'live' && grant.extension !== 'm3u8' ? `/api/iptv/vod/${grantId}/index.m3u8` : directUrl, directUrl, sourceFormat: grant.extension, telemetryPath: `/api/iptv/telemetry/${grantId}`, statsPath: `/api/iptv/traffic/${grantId}`, trackerPath: `/api/iptv/tracker/${grantId}`, swarmId: grant.swarmId, expiresAt: grant.expiresAt, isLive: grant.kind === 'live', isHls: true, iceServers, config: await this.configuration(), ...((grant.transport === 'p2p' || (grant.transport !== 'http' && this.env.P2P_DELIVERY_ENABLED)) ? { delivery: { mode: grant.transport === 'p2p' ? 'p2p-only' as const : 'p2p-first' as const, seedPath: `/api/iptv/seed/${grantId}`, segmentTimeoutMs: this.env.P2P_SEGMENT_TIMEOUT_MS, recoveryMs: 5000 } } : {}) };
   }
   isRelayRequest(request: { headers: Record<string, unknown>; raw: { socket: { remoteAddress: string | undefined } } }) {
     return request.headers['x-highpass-relay'] === this.relaySecret && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.raw.socket.remoteAddress ?? '');
@@ -189,10 +189,10 @@ export class IptvService {
   isSeedRequest(request: Parameters<IptvService['isRelayRequest']>[0]) { return this.isRelayRequest(request) && request.headers['x-highpass-seed'] === '1'; }
   async recordHttp(grant: string, bytes: number) { if (bytes > 0) await this.redis.multi().hincrby(`highpass:traffic:${digest(grant)}`, 'httpDownloaded', bytes).expire(`highpass:traffic:${digest(grant)}`, 86400).exec(); }
   async traffic(grant: string) { const httpDownloaded = Number(await this.redis.hget(`highpass:traffic:${digest(grant)}`, 'httpDownloaded')) || 0; return { httpDownloaded, p2pDownloaded: 0, p2pUploaded: 0, peers: 0, totalDownloaded: httpDownloaded, httpPercentage: httpDownloaded ? 100 : 0, p2pPercentage: 0, transport: 'http', scope: 'engine-to-client' }; }
-  resourceUrl(grantId: string, url: URL) {
+  resourceUrl(grantId: string, url: URL, kind: 'playlist' | 'segment' | 'key' = 'playlist') {
     url = xuiTransportUrl(url, this.env);
     this.checkUpstream(url);
-    const sealed = encryptResource(JSON.stringify({ grantId, url: url.href }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
+    const sealed = encryptResource(JSON.stringify({ grantId, url: url.href, kind }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
     return `/api/iptv/media/${grantId}/${sealed}`;
   }
   async grant(id: string): Promise<MediaGrant> {
@@ -202,6 +202,10 @@ export class IptvService {
     const grant = mediaGrantDto.parse(JSON.parse(raw) as unknown);
     await this.sessionByHash(grant.sessionHash);
     return grant;
+  }
+  resourceKind(grantId: string, sealed: string): string {
+    try { const value = object(JSON.parse(decryptResource(sealed, this.env.CONFIG_ENCRYPTION_KEY, grantId)) as unknown); return typeof value.kind === 'string' ? value.kind : value.alias ? 'segment' : 'playlist'; }
+    catch { throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
   }
   async resource(grantId: string, sealed: string): Promise<URL> {
     try {
@@ -218,7 +222,7 @@ export class IptvService {
     } catch (error) { if (error instanceof AppError && error.code === 'SEGMENT_EXPIRED') throw error; throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
   }
   async rewriteManifest(text: string, base: URL, grantId: string, playlistIdentity: string): Promise<string> {
-    const local = (value: string) => this.resourceUrl(grantId, new URL(value, base));
+    const local = (value: string, kind: 'playlist' | 'segment' | 'key' = 'playlist') => this.resourceUrl(grantId, new URL(value, base), kind);
     const lines = text.split(/\r?\n/);
     let sequence = Number(lines.find((line) => line.startsWith('#EXT-X-MEDIA-SEQUENCE:'))?.split(':')[1] ?? 0);
     const discontinuity = lines.find((line) => line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE:')) ?? '';
@@ -226,7 +230,7 @@ export class IptvService {
     const result = lines.map((line) => {
       if (!line.trim()) return line;
       if (line.startsWith('#EXTINF:')) media = true;
-      if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_match, uri: string) => `URI="${local(uri)}"`);
+      if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_match, uri: string) => `URI="${local(uri, /^#EXT-X-(SESSION-)?KEY:/.test(line) ? 'key' : /^#EXT-X-(MAP|PART|PRELOAD-HINT):/.test(line) ? 'segment' : 'playlist')}"`);
       if (!media) return local(line.trim());
       media = false;
       if (++count > 2000 || !Number.isSafeInteger(sequence)) throw new AppError(502, 'HLS_SEGMENTS', 'Playlist excedeu o limite de segmentos');
@@ -235,7 +239,7 @@ export class IptvService {
       // fica estável e somente o destino cifrado expira/é atualizado no Redis.
       const alias = digest(`${playlistIdentity}:${discontinuity}:${sequence++}`);
       pipeline.set(`highpass:hls:${digest(grantId)}:${alias}`, encrypt(url.href, this.env.CONFIG_ENCRYPTION_KEY), 'EX', 600);
-      const sealed = encryptResource(JSON.stringify({ grantId, alias }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
+      const sealed = encryptResource(JSON.stringify({ grantId, alias, kind: 'segment' }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
       return `/api/iptv/media/${grantId}/${sealed}`;
     }).join('\n');
     if (count) { const replies = await pipeline.exec(); if (!replies || replies.some(([error]) => error)) throw new AppError(503, 'HLS_CACHE', 'Mapeamento de segmentos indisponível'); }

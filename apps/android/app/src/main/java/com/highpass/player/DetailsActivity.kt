@@ -32,7 +32,7 @@ class DetailsActivity : ComponentActivity() {
         val info = PlayerTheme.column(this)
         info.addView(PlayerTheme.label(this, if (item.optString("kind") == "series") "SÉRIES · TEMPORADAS E EPISÓDIOS" else "FILMES · SOB DEMANDA"))
         info.addView(PlayerTheme.text(this, item.optString("name"), if (wide) 30f else 21f, bold = true).apply { maxLines = 3; setPadding(0, dp(14), 0, dp(16)) })
-        info.addView(PlayerTheme.text(this, "P2P automático · HTTP de contingência\nFavoritos e reprodução na sua conta", 13f, PlayerTheme.muted))
+        info.addView(PlayerTheme.text(this, "Somente ${BuildConfig.TRANSPORT.uppercase()}\nFavoritos e reprodução na sua conta", 13f, PlayerTheme.muted))
         var favorite: Button? = null
         favorite = PlayerTheme.button(this, if (library.contains(item)) "♥ Remover dos favoritos" else "♡ Adicionar aos favoritos") { val added = library.toggle(item); favorite?.text = if (added) "♥ Remover dos favoritos" else "♡ Adicionar aos favoritos" }
         info.addView(favorite, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(18) }); header.addView(info, LinearLayout.LayoutParams(0, -2, 1f)); root.addView(header)

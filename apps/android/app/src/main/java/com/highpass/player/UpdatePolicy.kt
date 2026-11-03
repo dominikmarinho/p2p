@@ -15,7 +15,7 @@ object UpdatePolicy {
         val base = URI(engineUrl); val target = base.resolve(release.downloadUrl)
         require(target.scheme == base.scheme && target.host == base.host && target.port == base.port && target.rawUserInfo == null && target.rawQuery == null && target.rawFragment == null) { "Origem da atualização não autorizada" }
         require(target.scheme == "https" || (target.scheme == "http" && target.host in listOf("10.0.2.2", "127.0.0.1", "localhost"))) { "A atualização exige HTTPS" }
-        require(Regex("^/downloads/android/highpass-[0-9]+\\.apk$").matches(target.path)) { "Endereço do pacote inválido" }
+        require(Regex("^/downloads/android/(?:p2p/)?highpass-[0-9]+\\.apk$").matches(target.path)) { "Endereço do pacote inválido" }
     }
     fun hashMatches(actual: ByteArray, expected: String) = MessageDigest.isEqual(actual, expected.chunked(2).map { it.toInt(16).toByte() }.toByteArray())
 }

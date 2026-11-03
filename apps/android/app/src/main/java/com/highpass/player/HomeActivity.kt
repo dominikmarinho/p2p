@@ -92,7 +92,7 @@ class HomeActivity : ComponentActivity() {
         PlayerTheme.edgeToEdge(this, root); setContentView(root); navigate("home")
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) { override fun handleOnBackPressed() { if (section != "home") navigate("home") else moveTaskToBack(true) } })
         lifecycleScope.launch {
-            try { account = api.json("account"); store.read()?.let { store.save(it.put("account", account)) }; connection.text = "● Engine conectada  ·  P2P automático com HTTP de contingência"; connection.setTextColor(PlayerTheme.accent) }
+            try { account = api.json("account"); store.read()?.let { store.save(it.put("account", account)) }; connection.text = "● Engine conectada  ·  Somente ${BuildConfig.TRANSPORT.uppercase()}"; connection.setTextColor(PlayerTheme.accent) }
             catch (failure: Exception) { if (failure is CancellationException) throw failure; if (failure is ApiFailure && failure.status == 401) logout() else { connection.text = "Sem conexão com a engine · tente recarregar"; connection.setTextColor(PlayerTheme.warning) } }
         }
         lifecycleScope.launch {
@@ -200,7 +200,7 @@ class HomeActivity : ComponentActivity() {
         val scroll = ScrollView(this); val content = PlayerTheme.column(this)
         fun card(title: String, description: String, button: String, action: () -> Unit) { val panel = PlayerTheme.column(this, 20).apply { background = PlayerTheme.shape(this@HomeActivity) }; panel.addView(PlayerTheme.text(this, title, 20f, bold = true)); panel.addView(PlayerTheme.text(this, description, 14f, PlayerTheme.muted).apply { setPadding(0, dp(12), 0, dp(16)) }); panel.addView(PlayerTheme.button(this, button, action = action)); content.addView(panel, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) }) }
         card("Atualização do aplicativo", "Versão instalada ${BuildConfig.VERSION_NAME}. Consulte novidades e instale sem perder seu login ou favoritos.", "Verificar atualizações") { updates() }
-        card("P2P e qualidade de conexão", "P2P priorizado para os segmentos disponíveis. HTTP mantém a reprodução durante falhas, com recuperação automática. As taxas e os peers reais aparecem no player.", "Recarregar biblioteca") { navigate("live") }
+        card("Transporte e qualidade de conexão", "Cliente ${BuildConfig.TRANSPORT.uppercase()}. ${if (BuildConfig.TRANSPORT == "p2p") "Vídeo somente por P2P, sem contingência HTTP. Requer seed disponível." else "Vídeo somente por HTTP, sem seeds nem WebRTC."} As taxas reais aparecem no player.", "Recarregar biblioteca") { navigate("live") }
         card("Miniaturas e capas", "Imagens carregadas sob demanda com cache limitado. Limpar miniaturas não remove sua conta nem os favoritos.", "Limpar miniaturas") { artwork.clear(); Toast.makeText(this, "Cache de miniaturas limpo", Toast.LENGTH_SHORT).show() }
         scroll.addView(content); body.addView(scroll, LinearLayout.LayoutParams(-1, -1))
     }

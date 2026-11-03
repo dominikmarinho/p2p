@@ -14,6 +14,7 @@ import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 object PlayerTheme {
     val background = Color.rgb(9, 15, 24)
@@ -61,8 +62,22 @@ object PlayerTheme {
             view.setPadding(bars.left + gap, bars.top + gap, bars.right + gap, bars.bottom + gap); insets
         }
     }
+    fun playerWindow(activity: Activity, root: View, fullscreen: Boolean) {
+        val controller = WindowCompat.getInsetsController(activity.window, root)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (fullscreen) {
+            WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+            ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets -> view.setPadding(0, 0, 0, 0); insets }
+            root.setPadding(0, 0, 0, 0)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            edgeToEdge(activity, root)
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
     fun brand(context: Context) = column(context).apply {
         addView(text(context, "H  HIGH PASS", 21f, accent, true))
-        addView(label(context, "PLAY · P2P NETWORK").apply { setPadding(dp(context, 29), dp(context, 7), 0, 0) })
+        addView(label(context, "PLAY · ${BuildConfig.TRANSPORT.uppercase()}").apply { setPadding(dp(context, 29), dp(context, 7), 0, 0) })
     }
 }

@@ -21,10 +21,52 @@ describe('aquecimento antecipado e capacidade dos seeds', () => {
       await vi.waitFor(() => expect(startSeed).toHaveBeenCalledWith('seed:first', 'first', token, expect.stringContaining('127.0.0.1')));
       await vi.waitFor(() => expect(seeds.snapshot().ready).toBe(1));
       expect(await seeds.prepare(app, token, 'second')).toMatchObject({ state: 'unavailable', reason: 'capacity' });
-      now += 36000;
+      now += 16000;
       expect(await seeds.prepare(app, token, 'second')).toMatchObject({ state: 'warming' });
       expect(stopSeed).toHaveBeenCalledWith('seed:first'); expect(seeds.snapshot().streams[0]?.swarm).toBe('second');
       await expect(seeds.prepare(app, 'wrong-token', 'third')).rejects.toMatchObject({ code: 'MEDIA_OWNER' });
     } finally { await seeds.close(); await app.close(); clock.mockRestore(); }
   });
+  it('preserva outros espectadores e encerra o worker assim que o último sai', async () => {
+    const token = 'a'.repeat(64); const stopSeed = vi.fn(() => Promise.resolve()); const startSeed = vi.fn(() => Promise.resolve(true));
+    const service = { env: { P2P_SEED_ENABLED: true, P2P_SEED_MAX_STREAMS: 1 }, grant: (id: string) => Promise.resolve({ sessionHash: digest(token), swarmId: 'shared', kind: 'live', id }) } as unknown as IptvService;
+    const relay = { stopSeed, startSeed, seedStatus: () => Promise.resolve({ ready: true, positions: [0] }), stats: () => undefined } as unknown as RokuRelay;
+    const counter = { inc: vi.fn(), set: vi.fn() }; const metrics = { seedOrigin: counter, seedUpload: counter, seedActive: counter, seedReady: counter, seedViewers: counter } as unknown as Metrics;
+    const app = Fastify(); await app.listen({ host: '127.0.0.1', port: 0 }); const seeds = new SeedManager(service, relay, metrics);
+    try {
+      await seeds.prepare(app, token, 'owner'); await seeds.prepare(app, token, 'second');
+      await vi.waitFor(() => expect(seeds.snapshot().ready).toBe(1));
+      await seeds.detach('owner'); expect(seeds.snapshot().streams[0]?.viewers).toBe(1); expect(stopSeed).not.toHaveBeenCalled();
+      await seeds.detach('second'); expect(seeds.snapshot().active).toBe(0); expect(stopSeed).toHaveBeenCalledExactlyOnceWith('seed:shared');
+      expect(await seeds.prepare(app, token, 'second')).toMatchObject({ state: 'warming', reason: 'releasing' });
+      expect(seeds.snapshot().active).toBe(0);
+    } finally { await seeds.close(); await app.close(); }
+  });
+  it('expira o lease de um player que desapareceu sem DELETE', async () => {
+    let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const token = 'b'.repeat(64); const stopSeed = vi.fn(() => Promise.resolve());
+    const service = { env: { P2P_SEED_ENABLED: true, P2P_SEED_MAX_STREAMS: 1 }, grant: (id: string) => Promise.resolve({ sessionHash: digest(token), swarmId: id, kind: 'live', id }) } as unknown as IptvService;
+    const relay = { stopSeed, startSeed: () => Promise.resolve(true), seedStatus: () => Promise.resolve({ ready: true, positions: [0] }), stats: () => undefined } as unknown as RokuRelay;
+    const counter = { inc: vi.fn(), set: vi.fn() }; const metrics = { seedOrigin: counter, seedUpload: counter, seedActive: counter, seedReady: counter, seedViewers: counter } as unknown as Metrics;
+    const app = Fastify(); await app.listen({ host: '127.0.0.1', port: 0 }); const seeds = new SeedManager(service, relay, metrics);
+    try {
+      await seeds.prepare(app, token, 'crashed'); await vi.waitFor(() => expect(seeds.snapshot().ready).toBe(1)); now += 16000;
+      await vi.waitFor(() => expect(seeds.snapshot().active).toBe(0), { timeout: 2000 });
+      expect(stopSeed).toHaveBeenCalledWith('seed:crashed');
+    } finally { await seeds.close(); await app.close(); clock.mockRestore(); }
+  });
+
+  it('descarta heartbeat antigo que terminou de autenticar depois do encerramento', async () => {
+    let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const token = 'c'.repeat(64); let complete: (value: unknown) => void = () => undefined;
+    const grant = { sessionHash: digest(token), swarmId: 'late', kind: 'live', id: 'late' };
+    const service = { env: { P2P_SEED_ENABLED: true, P2P_SEED_MAX_STREAMS: 1 }, grant: () => new Promise((resolve) => { complete = resolve; }) } as unknown as IptvService;
+    const relay = { stopSeed: () => Promise.resolve() } as unknown as RokuRelay;
+    const app = Fastify(); await app.listen({ host: '127.0.0.1', port: 0 }); const seeds = new SeedManager(service, relay, {} as Metrics);
+    try {
+      const pending = seeds.prepare(app, token, 'late'); await seeds.detach('late'); now += 6000; complete(grant);
+      expect(await pending).toMatchObject({ state: 'warming', reason: 'releasing' }); expect(seeds.snapshot().active).toBe(0);
+    } finally { await seeds.close(); await app.close(); clock.mockRestore(); }
+  });
+
 });

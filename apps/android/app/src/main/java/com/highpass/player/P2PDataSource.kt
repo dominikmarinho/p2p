@@ -23,6 +23,7 @@ class P2PDataSource(private val bridge: P2PBridge, token: String) : BaseDataSour
         if (p2p != null) {
             buffered = p2p; usingHttp = false; opened = true; transferStarted(dataSpec); return p2p.size.toLong()
         }
+        if (BuildConfig.TRANSPORT == "p2p" && bridge.isVideoSegment(dataSpec.uri.toString())) throw IOException("Segmento P2P indisponível; HTTP de vídeo desativado")
         usingHttp = true
         val length = http.open(dataSpec)
         val type = http.responseHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value?.firstOrNull().orEmpty()
