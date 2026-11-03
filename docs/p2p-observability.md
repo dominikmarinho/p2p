@@ -106,10 +106,10 @@ A integração entregue assume o contrato Player API compatível com `player_api
 
 `prometheus/prometheus.yml` implementa o scrape local pedido, com `job_name=fastify_p2p_app`, serviço `p2p-engine`, intervalo 15s e rota `/metrics`. `prometheus/prometheus.prod.yml` usa aliases explícitos para os dois slots de produção. O slot parado aparece com `up=0`; considere `max(up{job="fastify_p2p_app"})` ao criar alertas de disponibilidade do serviço, para não alertar sobre o slot inativo.
 
-`/metrics` exige `Authorization: Bearer METRICS_TOKEN`; não usa JWT de cliente. Prometheus recebe esse token via ambiente e cria um arquivo privado em seu `/tmp` antes de iniciar. O token não fica no YAML versionado. A configuração Nginx bloqueia `/metrics` no site público. Prometheus/Grafana publicam portas somente em loopback. Use túnel SSH para acessar o servidor:
+`/metrics` exige `Authorization: Bearer METRICS_TOKEN`; não usa JWT de cliente. Prometheus recebe esse token via ambiente e cria um arquivo privado em seu `/tmp` antes de iniciar. O token não fica no YAML versionado. A configuração Nginx bloqueia `/metrics` no site público. Grafana de produção está disponível em **https://p2p.remoto.api.br/grafana/**, com autenticação própria e cookies seguros. O Compose configura `root_url` com o prefixo e `serve_from_sub_path=true`; Nginx mantém esse caminho ao encaminhar HTTP e WebSocket. A porta 3003 continua em loopback para o proxy, por isso `dominio:3003` não é um endereço público válido. Prometheus permanece privado; use túnel SSH para acessá-lo:
 
 ```bash
-ssh -L 9090:127.0.0.1:9090 -L 3003:127.0.0.1:3003 deploy@seu-servidor
+ssh -L 9090:127.0.0.1:9090 deploy@seu-servidor
 ```
 
 O datasource tem UID fixo `Prometheus`, igual ao JSON do dashboard. O provider é provisionado por arquivo e os mounts são somente leitura. Os gráficos usam os contadores realmente exportados; conexões WS não usam handles genéricos do Node como substituto. CPU/RSS/heap distinguem instâncias; contadores agregados usam `sum(rate(...))` e os percentis agregam buckets antes de `histogram_quantile`.

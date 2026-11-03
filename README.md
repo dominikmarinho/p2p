@@ -90,6 +90,8 @@ apps/android/gradlew -p apps/android :app:assembleDebug -PengineUrl=http://10.0.
 
 O APK debug é instalável; distribuição em loja exige assinatura release própria. Os endereços de produção são fixos por build. Os acessos administrativos gerados para o servidor ficam somente em `/opt/highpass/access.txt`, com permissão 0600.
 
+Grafana em produção: **https://p2p.remoto.api.br/grafana/**, com o login próprio do Grafana registrado nesse arquivo privado. Nginx publica o painel por HTTPS; a porta 3003 atende apenas o proxy local.
+
 ## 5. Execução, CI/CD e validação
 
 ```bash

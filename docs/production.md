@@ -178,6 +178,8 @@ sudo systemctl enable --now certbot.timer
 
 O site usa `listen ... ssl http2`, compatível com Nginx dos pacotes Debian/Ubuntu; versões mais recentes podem recomendar `http2 on`. O HSTS cobre somente o domínio configurado, sem habilitar preload/includeSubDomains automaticamente. O proxy sobrescreve `X-Forwarded-For`, e o Fastify confia em exatamente um salto. Se adicionar CDN ou outro proxy, revise a cadeia de confiança e as chaves de rate limit.
 
+O mesmo site publica Grafana em `https://p2p.remoto.api.br/grafana/`, preservando o prefixo e suportando WebSocket. `PUBLIC_ENGINE_URL` deve conter a URL HTTPS pública sem barra final; Compose deriva dela `GF_SERVER_ROOT_URL`, habilita `GF_SERVER_SERVE_FROM_SUB_PATH` e cookies seguros. A porta 3003 permanece apenas em loopback. Acesse o painel pela URL HTTPS e use `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD`; no servidor preparado, consulte `/opt/highpass/access.txt`. A configuração segue o [guia oficial de proxy e subcaminho do Grafana](https://grafana.com/tutorials/run-grafana-behind-a-proxy/).
+
 ## Primeiro deploy e próximas publicações
 
 Após configurar secrets, infraestrutura e Nginx, um push aprovado em `main` executará lint, testes, build Android, publicação da imagem e deploy. O job envia Compose, scripts e configurações Prometheus/Grafana da mesma revisão para `/opt/highpass/releases/COMMIT_SHA`; não há `git pull` remoto nem necessidade de dar acesso do host ao código privado. O primeiro deploy seleciona blue/3001; o próximo seleciona green/3002. O helper root aceita somente essas portas e valida a configuração antes do reload.

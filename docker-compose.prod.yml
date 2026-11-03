@@ -113,6 +113,9 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD obrigatória}
+      GF_SERVER_ROOT_URL: ${PUBLIC_ENGINE_URL:-https://p2p.remoto.api.br}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+      GF_SECURITY_COOKIE_SECURE: 'true'
       GF_USERS_ALLOW_SIGN_UP: 'false'
       GF_AUTH_ANONYMOUS_ENABLED: 'false'
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
@@ -121,7 +124,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     mem_limit: 512m
     healthcheck:
-      test: [CMD, wget, -q, --spider, 'http://127.0.0.1:3000/api/health']
+      test: [CMD, wget, -q, --spider, 'http://127.0.0.1:3000/grafana/api/health']
       interval: 5s
       timeout: 3s
       retries: 30
