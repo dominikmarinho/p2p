@@ -11,7 +11,7 @@ import { digest } from '../../lib/secrets.js';
 
 async function* bodyChunks(body: ReadableStream<Uint8Array>, record: (bytes: number) => Promise<void>): AsyncGenerator<Buffer> {
   const reader = body.getReader(); let size = 0;
-  try { while (true) { const next = await reader.read(); if (next.done) return; size += next.value.byteLength; yield Buffer.from(next.value); if (size >= 1048576) { await record(size); size = 0; } } }
+  try { while (true) { const next = await reader.read(); if (next.done) return; size += next.value.byteLength; yield Buffer.from(next.value.buffer, next.value.byteOffset, next.value.byteLength); if (size >= 1048576) { await record(size); size = 0; } } }
   finally { await record(size); await reader.cancel().catch(() => undefined); }
 }
 
@@ -102,7 +102,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     const timeout = setTimeout(() => controller.abort(), 10000); timeout.unref();
     reply.raw.once('close', () => { if (!reply.raw.writableFinished) controller.abort(); });
     let response: Response;
-    try { response = await service.fetch(upstream, { headers: request.headers.range ? { Range: request.headers.range } : {}, signal: controller.signal }); }
+    try { const options = { headers: request.headers.range ? { Range: request.headers.range } : {}, signal: controller.signal }; response = permission.kind === 'live' || upstream.pathname.endsWith('.m3u8') ? await service.fetchMedia(upstream, options, `${permission.accountId ?? permission.sessionHash}:${permission.swarmId}`) : await service.fetch(upstream, options); }
     finally { clearTimeout(timeout); }
     if (!response.ok) { await response.body?.cancel(); throw new AppError(response.status === 404 ? 404 : 502, 'MEDIA_UPSTREAM', 'Conteúdo temporariamente indisponível'); }
     const contentType = response.headers.get('content-type') ?? 'application/octet-stream';

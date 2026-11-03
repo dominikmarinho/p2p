@@ -10,7 +10,7 @@ Roku inclui menu lateral, cards e capas, guia ao vivo, favoritos e consulta de v
 
 ## Início e recuperação
 
-A API inicia o aquecimento assíncrono do seed ao autorizar a reprodução. A resposta não espera a inicialização do navegador do seed. Os clientes continuam conectando aos peers enquanto permitem HTTP se o seed declara aquecimento/indisponibilidade ou se um segmento excede o prazo de entrega. Um seed pronto e peers com o segmento permitem P2P; uma falha não exige reiniciar o player inteiro para abrir HTTP. Novas entregas P2P fecham a contingência e o cliente continua tentando após recuperação.
+A API inicia o aquecimento assíncrono do seed ao autorizar a reprodução. A resposta não espera a inicialização do navegador do seed. Os clientes mantêm a prioridade P2P durante o aquecimento do seed. HTTP é liberado quando o seed declara indisponibilidade ou quando um segmento excede seu prazo de entrega. Um seed pronto e peers com o segmento permitem P2P; uma falha não exige reiniciar o player inteiro para abrir HTTP. Novas entregas P2P fecham a contingência e o cliente continua tentando após recuperação.
 
 O primeiro espectador de um canal frio pode receber segmentos por HTTP enquanto o seed obtém dados da origem e estabelece WebRTC. Não é possível prometer P2P disponível antes de existir algum peer com os segmentos. O prazo e a capacidade estão em `P2P_SEGMENT_TIMEOUT_MS` e `P2P_SEED_MAX_STREAMS`; espectadores desconectados expiram e seeds sem espectadores podem ceder sua vaga.
 

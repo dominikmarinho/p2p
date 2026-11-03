@@ -1291,6 +1291,165 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 37,
+      "title": "HLS · aberturas iniciais e recargas de sessão",
+      "description": "A URL inicial autentica e pode abrir uma sessão no XUI. Recargas reutilizam essa sessão. Segmentos normais não equivalem a novos espectadores.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 109,
+        "w": 12,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "expr": "sum(rate(xui_hls_entry_opens_total[5m]))",
+          "legendFormat": "Aberturas iniciais",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "expr": "sum(rate(xui_hls_playlist_reloads_total[5m]))",
+          "legendFormat": "Recargas da sessão",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "title": "Contextos HLS e buscas pendentes na engine",
+      "description": "Contextos mantidos até o prazo de inatividade; não equivale à contagem de conexões TCP nem à tabela Live Connections do XUI.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 109,
+        "w": 12,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "expr": "sum(xui_hls_session_contexts)",
+          "legendFormat": "Contextos em cache",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "expr": "sum(xui_media_pending_requests)",
+          "legendFormat": "Buscas pendentes",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "title": "Cache de mídia compartilhado",
+      "description": "Cache de mídia com limite de memória por processo; usado pelo seed e pelo HTTP de contingência.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 116,
+        "w": 12,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "expr": "sum(xui_media_cache_bytes)",
+          "legendFormat": "Bytes em cache",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "title": "Buscas de origem evitadas pelo cache",
+      "description": "Um pedido concorrente compartilha a mesma busca em andamento. Os dados de origem preservam autenticação e isolamento da linha.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 116,
+        "w": 12,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "expr": "sum(rate(xui_media_cache_hits_total[5m]))",
+          "legendFormat": "Acertos de cache",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "expr": "sum(rate(xui_media_coalesced_requests_total[5m]))",
+          "legendFormat": "Pedidos concorrentes compartilhados",
+          "refId": "B"
+        }
+      ]
     }
   ],
   "refresh": "5s",
@@ -1309,5 +1468,5 @@
   "timezone": "browser",
   "title": "Fastify P2P Engine - Dashboard",
   "uid": "fastify-p2p-dashboard",
-  "version": 3
+  "version": 4
 }

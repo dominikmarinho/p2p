@@ -98,6 +98,7 @@ highpass-p2p-engine/
 │       │   │   ├── browser-seed.ts
 │       │   │   ├── delivery-policy.ts
 │       │   │   ├── native-core.ts
+│       │   │   ├── seed-storage.ts
 │       │   │   ├── stats.ts
 │       │   │   └── telemetry.ts
 │       │   ├── App.tsx
@@ -113,6 +114,8 @@ highpass-p2p-engine/
 │       └── vite.config.ts
 ├── docs/
 │   ├── previews/
+│   │   ├── android-home-tv.png
+│   │   ├── android-live-tv.png
 │   │   ├── vod-traffic.png
 │   │   ├── webplayer-live.png
 │   │   ├── webplayer-login.png
@@ -126,7 +129,8 @@ highpass-p2p-engine/
 │   ├── production.md
 │   ├── seeds-production.md
 │   ├── smart-tv-production.md
-│   └── validation.md
+│   ├── validation.md
+│   └── xui-hls-session-reuse.md
 ├── drizzle/
 │   ├── meta/
 │   │   ├── 0000_snapshot.json
@@ -211,6 +215,7 @@ highpass-p2p-engine/
 │   │   │   ├── iptv.dto.ts
 │   │   │   ├── iptv.routes.ts
 │   │   │   ├── iptv.service.ts
+│   │   │   ├── origin-media.ts
 │   │   │   ├── player-ui.ts
 │   │   │   ├── roku-relay.ts
 │   │   │   ├── seed-manager.ts
@@ -239,6 +244,7 @@ highpass-p2p-engine/
 │   └── server.ts
 ├── tests/
 │   ├── e2e/
+│   │   ├── admin-navigation.ts
 │   │   ├── android-fixture.ts
 │   │   ├── container-seed.ts
 │   │   ├── iptv-browser.ts
@@ -260,11 +266,14 @@ highpass-p2p-engine/
 │   ├── scripts/
 │   │   └── test_publish_clients.py
 │   └── unit/
+│       ├── browser-seed.test.ts
 │       ├── control-plane.test.ts
 │       ├── delivery-policy.test.ts
+│       ├── origin-media.test.ts
 │       ├── resources.test.ts
 │       ├── security.test.ts
 │       ├── seed-lifecycle.test.ts
+│       ├── seed-storage.test.ts
 │       ├── telemetry-id.test.ts
 │       ├── traffic.test.ts
 │       └── xui-transport.test.ts

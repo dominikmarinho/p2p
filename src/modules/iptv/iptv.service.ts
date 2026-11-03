@@ -7,6 +7,7 @@ import { xuiTransportUrl } from '../../lib/xui-transport.js';
 import { decrypt, digest, encrypt, encryptResource, decryptResource } from '../../lib/secrets.js';
 import { accountDto, mediaGrantDto, sessionDto, type CatalogItem, type ClientSession, type ContentKind, type MediaGrant } from './iptv.dto.js';
 import type { EngineConfig } from '../admin/admin.dto.js';
+import { OriginMedia, originCookies, rememberOriginCookies, type OriginContext } from './origin-media.js';
 
 export async function readBounded(response: Response, limit: number): Promise<string> {
   if (!response.body) throw new AppError(502, 'XUI_EMPTY', 'Origem sem resposta');
@@ -25,10 +26,13 @@ export class IptvService {
   readonly relaySecret = randomBytes(32).toString('hex');
   private active = 0;
   private readonly catalogs = new Map<string, { expires: number; items: CatalogItem[] }>();
+  private readonly media = new OriginMedia((url, init, context) => this.fetch(url, init, context));
+  close() { this.media.close(); }
+  fetchMedia(url: URL, options: RequestInit, scope: string) { return this.media.fetch(url, options, scope); }
   private readonly validations = new Map<string, Promise<ClientSession>>();
   constructor(private readonly redis: Redis, readonly env: Environment, private readonly configuration: () => Promise<EngineConfig>, private readonly metrics?: Metrics) {}
   private readonly errors: { at: string; kind: string; code: string }[] = [];
-  diagnostics() { return { pendingMetadata: this.active, recentFailures: [...this.errors] }; }
+  diagnostics() { return { pendingMetadata: this.active, recentFailures: [...this.errors], media: this.media.diagnostics() }; }
   private failure(kind: string, code: string) { this.metrics?.upstreamErrors.inc({ kind, code }); this.errors.push({ at: new Date().toISOString(), kind, code }); if (this.errors.length > 20) this.errors.shift(); }
   origin(): URL {
     const url = new URL(this.env.XUI_BASE_URL);
@@ -39,19 +43,22 @@ export class IptvService {
     const allowed = new Set([this.origin().host, ...this.env.XUI_ALLOWED_HOSTS.split(',').map((host) => host.trim())]);
     if (!allowed.has(url.host) || !['http:', 'https:'].includes(url.protocol) || (url.protocol === 'http:' && !this.env.XUI_ALLOW_HTTP) || url.username || url.password) throw new AppError(502, 'XUI_HOST', 'Host ou protocolo de origem não autorizado');
   }
-  async fetch(url: URL, options: RequestInit = {}): Promise<Response> {
+  async fetch(url: URL, options: RequestInit = {}, context?: OriginContext): Promise<Response> {
     const kind = url.pathname.includes('player_api.php') ? 'metadata' : /\.m3u8$/.test(url.pathname) ? 'playlist' : /\.(?:png|jpe?g|webp|gif|avif)$/i.test(url.pathname) ? 'artwork' : 'media';
     const start = performance.now(); let result = 'network';
     try {
       for (let hop = 0; hop < 4; hop++) {
         url = xuiTransportUrl(url, this.env); this.checkUpstream(url);
         let response: Response;
-        try { response = await fetch(url, { ...options, redirect: 'manual', signal: options.signal ?? AbortSignal.timeout(10000) }); }
+        const headers = new Headers(options.headers);
+        if (context) { const cookies = originCookies(context, url); if (cookies) headers.set('Cookie', cookies); else headers.delete('Cookie'); }
+        try { response = await fetch(url, { ...options, headers, redirect: 'manual', signal: options.signal ?? AbortSignal.timeout(10000) }); }
         catch (error) {
           const cause = error instanceof Error && error.cause && typeof error.cause === 'object' && 'code' in error.cause ? String(error.cause.code) : 'NETWORK';
           this.failure(kind, ['DEPTH_ZERO_SELF_SIGNED_CERT', 'CERT_HAS_EXPIRED', 'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT'].includes(cause) ? cause : 'NETWORK');
           throw new AppError(502, 'XUI_NETWORK', 'Não foi possível consultar a origem');
         }
+        if (context) rememberOriginCookies(context, url, response.headers);
         const location = response.headers.get('location');
         if ([301, 302, 303, 307, 308].includes(response.status) && location) { await response.body?.cancel(); url = new URL(location, url); continue; }
         result = `${Math.floor(response.status / 100)}xx`; if (!response.ok) this.failure(kind, String(response.status));
@@ -158,7 +165,7 @@ export class IptvService {
       if (!item) throw new AppError(404, 'CONTENT_NOT_FOUND', 'Conteúdo indisponível'); if (kind === 'movie') extension = item.extension;
     }
     const grantId = randomBytes(32).toString('hex');
-    const grant: MediaGrant = { relay, sessionHash: digest(token), kind, id, extension, swarmId: digest(`${this.origin().href}:${kind}:${id}`), expiresAt: session.expiresAt };
+    const grant: MediaGrant = { accountId: session.accountId, relay, sessionHash: digest(token), kind, id, extension, swarmId: digest(`${this.origin().href}:${kind}:${id}`), expiresAt: session.expiresAt };
     const ttl = Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000)); const grantHash = digest(grantId);
     const created = await this.redis.eval("if redis.call('EXISTS',KEYS[3])==0 then return 0 end; redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); redis.call('ZADD',KEYS[2],ARGV[3],ARGV[4]); redis.call('EXPIRE',KEYS[2],ARGV[2]); local excess=redis.call('ZCARD',KEYS[2])-4; if excess>0 then local ids=redis.call('ZRANGE',KEYS[2],0,excess-1); for _,id in ipairs(ids) do redis.call('DEL','highpass:media:'..id); redis.call('ZREM',KEYS[2],id) end end; return 1", 3, `highpass:media:${grantHash}`, `highpass:media-session:${grant.sessionHash}`, `highpass:client:${grant.sessionHash}`, JSON.stringify(grant), ttl, Date.now(), grantHash);
     if (created !== 1) throw new AppError(401, 'SESSION_EXPIRED', 'Sessão encerrada');

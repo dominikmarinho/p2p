@@ -24,6 +24,13 @@ export function createMetrics() {
     seedViewers: new Gauge({ ...common, name: 'p2p_seed_viewers', help: 'Players com lease ativo no seed' }),
     seedOrigin: new Counter({ ...common, name: 'p2p_seed_origin_bytes_total', help: 'Payload HTTP recebido pelos seeds' }),
     seedUpload: new Counter({ ...common, name: 'p2p_seed_uploaded_bytes_total', help: 'Payload WebRTC enviado pelos seeds' }),
+    originHlsOpens: new Counter({ ...common, name: 'xui_hls_entry_opens_total', help: 'Aberturas da URL inicial de HLS na origem; não conta recargas da sessão reutilizada' }),
+    originPlaylistReloads: new Counter({ ...common, name: 'xui_hls_playlist_reloads_total', help: 'Recargas de playlists em sessões HLS reutilizadas' }),
+    originCacheHits: new Counter({ ...common, name: 'xui_media_cache_hits_total', help: 'Respostas de mídia atendidas pelo cache compartilhado' }),
+    originCoalesced: new Counter({ ...common, name: 'xui_media_coalesced_requests_total', help: 'Pedidos concorrentes que compartilharam a mesma busca à origem' }),
+    originSessions: new Gauge({ ...common, name: 'xui_hls_session_contexts', help: 'Contextos de sessão HLS mantidos pela engine; não equivale à contagem de TCP no XUI' }),
+    originCacheBytes: new Gauge({ ...common, name: 'xui_media_cache_bytes', help: 'Bytes armazenados no cache de mídia da engine' }),
+    originPending: new Gauge({ ...common, name: 'xui_media_pending_requests', help: 'Buscas compartilhadas de mídia ainda em andamento' }),
   };
 }
 export type Metrics = ReturnType<typeof createMetrics>;

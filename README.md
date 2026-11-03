@@ -150,3 +150,5 @@ npm run build:tv
 Isso valida/empacota BrightScript e gera o IPK webOS. Tizen contém launcher/configuração e WGT sem assinatura; assinatura de distribuição exige certificado Samsung. Os pacotes Android/TV são artefatos de desenvolvimento e precisam de homologação nos modelos físicos utilizados.
 
 Aplicativos 1.1: [layout, atualização, recuperação P2P e publicação dos APKs](docs/client-release-1.1.md).
+
+Correção 1.1.1: [reutilização de sessão HLS, prioridade P2P e diagnóstico das conexões](docs/xui-hls-session-reuse.md).

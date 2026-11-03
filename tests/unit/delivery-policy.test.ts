@@ -14,16 +14,30 @@ describe('entrega P2P com contingência e recuperação', () => {
   it('envia a posição ao seed e libera o lease ao encerrar', async () => { policy = new DeliveryPolicy(playback, vi.fn()); await vi.advanceTimersByTimeAsync(1000); policy.playhead(130); await vi.advanceTimersByTimeAsync(0); expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.body === JSON.stringify({ position: 130 }))).toBe(true); policy.destroy(); expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === 'DELETE')).toBe(true); });
   it('envia a última posição após coalescer eventos dentro de 800ms', async () => { policy = new DeliveryPolicy(playback, vi.fn()); await vi.advanceTimersByTimeAsync(100); policy.playhead(130); await vi.advanceTimersByTimeAsync(750); expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.body === JSON.stringify({ position: 130 }))).toBe(true); });
   it('cancela prazos pendentes ao trocar de fonte', () => { const mode = vi.fn(); policy = new DeliveryPolicy(playback, mode); policy.begin('old', 0); policy.reset(); vi.advanceTimersByTime(4000); expect(mode.mock.calls).toEqual([[false]]); });
-  it('não espera outro deadline quando o servidor confirma seed em aquecimento', async () => {
+  it('mantém a tentativa P2P enquanto o seed aquece até o prazo do segmento', async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ state: 'warming' }) } as Response);
     const mode = vi.fn(); policy = new DeliveryPolicy(playback, mode); policy.begin('first', 0);
-    await vi.advanceTimersByTimeAsync(1); expect(mode).toHaveBeenLastCalledWith(true);
+    await vi.advanceTimersByTimeAsync(2999); expect(mode.mock.calls).toEqual([[false]]); await vi.advanceTimersByTimeAsync(1); expect(mode).toHaveBeenLastCalledWith(true);
   });
+  it('abre HTTP se o seed confirma indisponibilidade e retoma P2P ao ficar pronto', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ state: 'unavailable' }) } as Response);
+    const mode = vi.fn(); policy = new DeliveryPolicy(playback, mode); await vi.advanceTimersByTimeAsync(1); expect(mode).toHaveBeenLastCalledWith(true);
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ state: 'ready' }) } as Response);
+    policy.playhead(10); await vi.advanceTimersByTimeAsync(1000); expect(mode).toHaveBeenLastCalledWith(false);
+  });
+
   it('mantém P2P ativo quando a resposta do seed está atrasada mas há entrega real de peer', async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ state: 'ready' }) } as Response);
     const mode = vi.fn(); policy = new DeliveryPolicy(playback, mode); await vi.advanceTimersByTimeAsync(1); policy.recovered('first');
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ state: 'warming' }) } as Response);
     policy.playhead(10); await vi.advanceTimersByTimeAsync(1000); expect(mode.mock.calls).toEqual([[false]]);
+  });
+
+  it('não desativa um peer que entrega vídeo quando o seed está indisponível', async () => {
+    const mode = vi.fn(); policy = new DeliveryPolicy(playback, mode); policy.recovered('previous');
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ state: 'unavailable' }) } as Response);
+    policy.begin('next', 11); await vi.advanceTimersByTimeAsync(2999); expect(mode.mock.calls).toEqual([[false]]);
+    await vi.advanceTimersByTimeAsync(1); expect(mode).toHaveBeenLastCalledWith(true);
   });
 
   it('devolve a tentativa ao peer quando o HTTP falha, sem esperar janela de recuperação', () => { const mode = vi.fn(); policy = new DeliveryPolicy(playback, mode); policy.fallback(); policy.retryP2P(); expect(mode.mock.calls).toEqual([[false], [true], [false]]); });

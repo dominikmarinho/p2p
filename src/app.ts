@@ -61,6 +61,16 @@ export function buildApp(env: Environment) {
   const servers = new XuiServersService(db, env);
   const peers = new PeerManager(redis, metrics);
   const iptv = new IptvService(redis, env, () => admin.config(), metrics);
+  let previousOrigin = { playlistOpens: 0, playlistReloads: 0, cacheHits: 0, coalesced: 0 };
+  const originMetrics = setInterval(() => {
+    const current = iptv.diagnostics().media;
+    metrics.originHlsOpens.inc(Math.max(0, current.playlistOpens - previousOrigin.playlistOpens));
+    metrics.originPlaylistReloads.inc(Math.max(0, current.playlistReloads - previousOrigin.playlistReloads));
+    metrics.originCacheHits.inc(Math.max(0, current.cacheHits - previousOrigin.cacheHits));
+    metrics.originCoalesced.inc(Math.max(0, current.coalesced - previousOrigin.coalesced));
+    metrics.originSessions.set(current.sessions); metrics.originCacheBytes.set(current.cachedBytes); metrics.originPending.set(current.pending);
+    previousOrigin = current;
+  }, 5000); originMetrics.unref();
   const telemetry = new PlaybackTelemetry(redis, iptv, metrics);
   const relay = new RokuRelay(iptv);
   const seeds = new SeedManager(iptv, relay, metrics);
@@ -75,7 +85,7 @@ export function buildApp(env: Environment) {
     await peers.start();
     await tracker.start();
   });
-  app.addHook('preClose', async () => { await seeds.close(); await vod.close(); await relay.close(); });
+  app.addHook('preClose', async () => { clearInterval(originMetrics); await seeds.close(); await vod.close(); await relay.close(); iptv.close(); });
   app.addHook('onClose', async () => {
     peers.close();
     tracker.close();
