@@ -28,6 +28,7 @@ class PlayerActivity : ComponentActivity() {
     private var bridge: P2PBridge? = null
     private lateinit var playerView: PlayerView
     private var resumePosition = 0L
+    private var fallbackUsed = false
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val root = FrameLayout(this); playerView = PlayerView(this).apply { id = View.generateViewId(); useController = true; isFocusable = true; controllerShowTimeoutMs = 5000 }
@@ -50,7 +51,13 @@ class PlayerActivity : ComponentActivity() {
         } else { stats.text = "Reprodução HTTP"; DefaultHttpDataSource.Factory().setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token")).setConnectTimeoutMs(10000).setReadTimeoutMs(15000) }
         val engine = ExoPlayer.Builder(this).setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(factory)).setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(15000, 30000, 1000, 2000).build()).build()
         player = engine; playerView.player = engine
-        engine.addListener(object : Player.Listener { override fun onPlayerError(error: PlaybackException) { stats.text = "Reprodução indisponível. Volte e selecione novamente."; playerView.showController() } })
+        engine.addListener(object : Player.Listener { override fun onPlayerError(error: PlaybackException) {
+            val direct = playback.optString("directUrl")
+            if (!fallbackUsed && direct.isNotEmpty() && direct != playback.optString("url")) {
+                fallbackUsed = true; val position = engine.currentPosition; transport?.httpOnly(); stats.text = "Continuando por HTTP…"
+                engine.setMediaItem(MediaItem.fromUri(BuildConfig.ENGINE_URL + direct), position); engine.prepare(); engine.playWhenReady = true
+            } else { stats.text = "Reprodução indisponível. Volte e selecione novamente."; playerView.showController() }
+        } })
         val item = MediaItem.Builder().setUri(Uri.parse(BuildConfig.ENGINE_URL + playback.getString("url"))).setMediaId(playback.getString("swarmId")).apply { if (playback.optBoolean("isHls")) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
         engine.setMediaItem(item, if (playback.optBoolean("isLive")) androidx.media3.common.C.TIME_UNSET else 0L); if (resumePosition > 0) engine.seekTo(resumePosition); engine.prepare(); engine.playWhenReady = true
         playerView.requestFocus()

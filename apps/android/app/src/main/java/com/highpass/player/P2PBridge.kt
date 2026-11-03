@@ -84,6 +84,7 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, pri
         handler.post { if (!closed) webView.evaluateJavascript("window.HighpassBridge.playlist(${JSONObject.quote(uri)},${JSONObject.quote(text)})") { done.countDown() } else done.countDown() }
         done.await(2, TimeUnit.SECONDS)
     }
+    fun httpOnly() { if (!closed) handler.post { webView.evaluateJavascript("window.HighpassBridge?.httpOnly?.()", null) } }
     fun http(bytes: Int) { if (!closed && bytes > 0) httpBytes.addAndGet(bytes.toLong()) }
     fun close() {
         closed = true; ready.countDown(); requests.values.forEach { it.future.complete(null) }; requests.clear()

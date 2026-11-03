@@ -51,5 +51,17 @@ try {
   await page.screenshot({ path: 'docs/previews/vod-traffic.png', fullPage: true });
   await page.getByRole('button', { name: '▣ Filmes', exact: true }).focus(); await page.keyboard.press('ArrowDown');
   assert.notEqual(await page.evaluate(() => document.activeElement?.textContent), '▣Filmes');
+  const peerBytes = stats.p2pDownloaded;
+  const direct = descriptor.directUrl; assert.ok(direct);
+  const directResponse = await fetch(address + direct, { headers }); assert.equal(directResponse.status, 200); await directResponse.arrayBuffer();
+  await new Promise<void>((done) => setTimeout(done, 1500));
+  const retained = await (await fetch(address + descriptor.statsPath, { headers })).json() as typeof stats;
+  assert.ok(retained.p2pDownloaded >= peerBytes, 'Fallback deve preservar bytes P2P já recebidos'); assert.equal(retained.peers, 0);
+  assert.equal(retained.httpPercentage + retained.p2pPercentage, 100);
+  await page.route('**/api/iptv/vod/**/index.m3u8', (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Preparação VOD ocupada' }));
+  await page.getByRole('button', { name: /Filme de Teste.*Filme/ }).click();
+  await page.waitForFunction(() => { const video = document.querySelector('video'); return video !== null && video.src.includes('/api/iptv/media/') && video.currentTime > 0; }, undefined, { timeout: 45000 });
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid="http-percentage"]')?.textContent?.replace('%', '')) > 0);
+  console.log('Fallback VOD aprovado: reprodução HTTP pela engine, contadores P2P anteriores preservados e peers encerrados');
   console.log(`VOD e gateway Roku aprovados: ${stats.p2pDownloaded} bytes P2P; ${stats.peers} peer(s); HTTP/P2P somam 100%; HLS reproduzido e SHA-256 idêntico`);
 } finally { await browser.close(); await app.close(); await source.close(); await rm(folder, { recursive: true, force: true }); }

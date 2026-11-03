@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { HlsJsP2PEngine } from 'p2p-media-loader-hlsjs';
 import { absoluteUrl, trackerUrl, type Playback } from '../api';
-import { initialStats, trackStats } from '../p2p/stats';
+import { initialStats, trackStats, trafficPercentages } from '../p2p/stats';
 
 export function formatBytes(value: number): string { if (value < 1024) return `${Math.round(value)} B`; if (value >= 1073741824) return `${(value / 1073741824).toFixed(2)} GB`; if (value < 1048576) return `${(value / 1024).toFixed(1)} KB`; return `${(value / 1048576).toFixed(1)} MB`; }
 
@@ -10,22 +10,28 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
   const video = useRef<HTMLVideoElement>(null); const [stats, setStats] = useState(initialStats); const [error, setError] = useState(''); const [native, setNative] = useState(false);
   useEffect(() => {
     const element = video.current; if (!element) return;
-    setStats({ ...initialStats }); setError(''); setNative(false); let hls: Hls | undefined; let destroyStats = () => {}; let networkRetries = 0; let mediaRetries = 0;
-    const serverStats = () => {
+    setStats({ ...initialStats }); setError(''); setNative(false); let hls: Hls | undefined; let destroyStats = () => {}; let networkRetries = 0; let mediaRetries = 0; let fallbackUsed = false; let snapshot = () => ({ ...initialStats }); let restorePosition: (() => void) | undefined;
+    const serverStats = (p2pDownloaded = 0, p2pUploaded = 0) => {
       let cancelled = false;
-      const timer = setInterval(() => { if (playback.statsPath) void fetch(playback.statsPath, { credentials: 'same-origin' }).then(async (response) => { if (!response.ok) return; const value = await response.json() as Partial<typeof initialStats>; if (!cancelled) setStats({ ...initialStats, ...value }); }).catch(() => undefined); }, 1000);
+      const timer = setInterval(() => { if (playback.statsPath) void fetch(playback.statsPath, { credentials: 'same-origin' }).then(async (response) => { if (!response.ok) return; const value = await response.json() as Partial<typeof initialStats>; if (!cancelled) { const split = trafficPercentages(value.httpDownloaded ?? 0, p2pDownloaded); setStats({ ...initialStats, ...value, p2pDownloaded, p2pUploaded, ...split, saving: split.p2pPercentage }); } }).catch(() => undefined); }, 1000);
       return () => { cancelled = true; clearInterval(timer); };
     };
     if (playback.isHls && Hls.isSupported()) {
       const HlsWithP2P = HlsJsP2PEngine.injectMixin(Hls);
       const instance = new HlsWithP2P({ enableWorker: true, startPosition: playback.isLive ? -1 : 0, maxBufferLength: playback.config?.bufferSeconds ?? 20, backBufferLength: 15, p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: 1200, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled || typeof RTCPeerConnection === 'undefined' } } });
       hls = instance;
-      if (enabled && typeof RTCPeerConnection !== 'undefined') { const tracker = trackStats(instance.p2pEngine, setStats); destroyStats = tracker.destroy; } else { setNative(true); destroyStats = serverStats(); }
+      if (enabled && typeof RTCPeerConnection !== 'undefined') { const tracker = trackStats(instance.p2pEngine, setStats); destroyStats = tracker.destroy; snapshot = tracker.snapshot; } else { setNative(true); destroyStats = serverStats(); }
       instance.on(Hls.Events.MEDIA_ATTACHED, () => instance.loadSource(absoluteUrl(playback.url)));
       instance.on(Hls.Events.MANIFEST_PARSED, () => { void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); });
       instance.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 2) instance.startLoad();
+        if (!fallbackUsed && playback.directUrl && playback.directUrl !== playback.url) {
+          fallbackUsed = true; const position = element.currentTime; const accumulated = snapshot(); destroyStats(); instance.destroy(); hls = undefined;
+          setNative(true); setError(''); destroyStats = serverStats(accumulated.p2pDownloaded, accumulated.p2pUploaded);
+          restorePosition = () => { if (position > 0 && Number.isFinite(element.duration)) element.currentTime = Math.min(position, Math.max(0, element.duration - 1)); setError(''); void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); };
+          element.addEventListener('loadedmetadata', restorePosition, { once: true }); element.src = absoluteUrl(playback.directUrl); element.load();
+        }
+        else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 2) instance.startLoad();
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries++ < 1) instance.recoverMediaError();
         else { setError('Não foi possível reproduzir. Troque de canal ou entre novamente.'); instance.destroy(); }
       });
@@ -33,7 +39,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     } else {
       setNative(true); destroyStats = serverStats(); element.src = absoluteUrl(playback.url); void element.play().catch(() => setError('Pressione reproduzir para iniciar.'));
     }
-    return () => { destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
+    return () => { if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
   }, [playback, enabled]);
   const p2pDisplay = Math.round(stats.p2pPercentage * 10) / 10; const httpDisplay = stats.totalDownloaded > 0 ? 100 - p2pDisplay : 0;
   const active = enabled && !native && typeof RTCPeerConnection !== 'undefined';

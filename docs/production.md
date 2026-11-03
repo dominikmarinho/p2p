@@ -38,10 +38,10 @@ printf 'restrict %s\n' "$(cat ./highpass_deploy.pub)" | sudo tee -a /home/deploy
 Obtenha a fingerprint **no console confiável do servidor**:
 
 ```bash
-sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
+sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub -E sha256
 ```
 
-Copie apenas `SHA256:...` para `SSH_HOST_FINGERPRINT`. Não obtenha confiança inicial apenas com `ssh-keyscan` em uma rede desconhecida. Teste acesso manual com a nova chave antes de ativar o workflow.
+Copie apenas `SHA256:...` para `SSH_HOST_FINGERPRINT`. Neste servidor, o drone-ssh 1.8.2 usado pela action seleciona ECDSA; a fingerprint foi conferida com esse mesmo cliente e com a chave pública do console. A fingerprint deve corresponder ao algoritmo negociado pelo cliente, não à chave de autenticação do usuário. Não obtenha confiança inicial apenas com `ssh-keyscan` em uma rede desconhecida. Teste acesso manual com a nova chave antes de ativar o workflow.
 
 ## GitHub Secrets e permissões do registry
 
@@ -54,11 +54,11 @@ No repositório, abra **Settings → Environments → New environment → produc
 | `SSH_PRIVATE_KEY` | Chave privada OpenSSH completa da automação |
 | `PORT` | Porta SSH, normalmente `22` |
 | `SSH_HOST_FINGERPRINT` | Fingerprint SHA256 obtida no console do host |
-| `GHCR_TOKEN` | PAT classic com `read:packages` e acesso à imagem privada |
+| `GHCR_TOKEN` | Opcional: PAT classic somente `read:packages`, se precisar substituir o token temporário do job |
 
 Também é possível usar **Settings → Secrets and variables → Actions → Repository secrets**. Os secrets de ambiente prevalecem quando o job usa `environment: production`. Restrinja o ambiente à branch `main`. Para deploy automático sem intervenção, não configure um reviewer obrigatório; mantenha proteção de branch e revisão de pull requests.
 
-O build publica com `GITHUB_TOKEN`, que é fornecido automaticamente e recebe `packages: write` somente no job de publicação. O servidor usa `GHCR_TOKEN` com leitura: ele não precisa de `write:packages` nem `delete:packages`. Crie o PAT em **Settings da conta → Developer settings → Personal access tokens → Tokens (classic)**, selecione `read:packages`, defina expiração e autorize SSO se exigido pela organização. O dono do PAT precisa ter acesso ao pacote. Quando o dono do pacote é uma organização, configure a variável `GHCR_USERNAME` no repositório/ambiente com o login da conta que emitiu o token. Sem a variável, o workflow usa `github.repository_owner`.
+O build publica com `GITHUB_TOKEN`, que é fornecido automaticamente e recebe `packages: write` somente no job de publicação. Por padrão, o deploy envia um `GITHUB_TOKEN` temporário com `packages: read`, revogado ao concluir o job. Não é necessário guardar um token pessoal de longa duração. Se configurar o override `GHCR_TOKEN`, o servidor o usa com leitura: ele não precisa de `write:packages` nem `delete:packages`. Crie o PAT em **Settings da conta → Developer settings → Personal access tokens → Tokens (classic)**, selecione `read:packages`, defina expiração e autorize SSO se exigido pela organização. O dono do PAT precisa ter acesso ao pacote. Quando o dono do pacote é uma organização, configure a variável `GHCR_USERNAME` no repositório/ambiente com o login da conta que emitiu o token. Sem a variável, o workflow usa `github.repository_owner`.
 
 O nome da imagem é normalizado para minúsculas. O primeiro push no GHCR é privado por padrão. Se já existe pacote criado fora desse repositório, conceda acesso ao workflow nas configurações do pacote. O login remoto usa `--password-stdin`, armazenamento temporário e remoção ao sair. Veja a [documentação oficial do GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 

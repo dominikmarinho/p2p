@@ -133,6 +133,9 @@ jobs:
           provenance: true
           sbom: true
   deploy:
+    permissions:
+      contents: read
+      packages: read
     needs: [lint-typecheck, tests, build-push]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -149,7 +152,7 @@ jobs:
           DEPLOY_PORT: ${{ secrets.PORT }}
           HOST_FINGERPRINT: ${{ secrets.SSH_HOST_FINGERPRINT }}
           DEPLOY_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          REGISTRY_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          REGISTRY_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
         run: |
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
@@ -169,7 +172,7 @@ jobs:
           IMAGE_NAME: ${{ needs.build-push.outputs.image }}
           IMAGE_TAG: ${{ github.sha }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME || github.repository_owner }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
@@ -185,7 +188,7 @@ jobs:
             test "${#IMAGE_TAG}" -eq 40
             release_dir="/opt/highpass/releases/$IMAGE_TAG"
             mkdir -p "$release_dir"
-            printf '%s' "$RELEASE_B64" | base64 --decode | tar -xz -C "$release_dir"
+            printf '%s' "$RELEASE_B64" | base64 --decode | tar -xz --no-same-owner --same-permissions -C "$release_dir"
             DOCKER_CONFIG=$(mktemp -d)
             export DOCKER_CONFIG
             trap 'rm -rf "$DOCKER_CONFIG"' EXIT

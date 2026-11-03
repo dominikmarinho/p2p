@@ -125,7 +125,7 @@ O SQL inicial já está em `drizzle/`. Para evoluir: altere `src/db/schema.ts`, 
 
 CI: **lint/tipos + pacotes TV → testes PostgreSQL/Redis + navegador/P2P e build Android → imagem GHCR SHA/latest → deploy SSH em main**. A entrada é `.github/workflows/deploy.yml`, que chama `ci-cd.yml`. O deploy usa fingerprint, credenciais temporárias do registry, migrations, slot inativo blue/green, readiness e troca Nginx. Simples recriação Compose não garante continuidade; os scripts entregues mantêm a instância anterior até a nova estar pronta. WebSockets reconectam após a drenagem. Migrations devem ser compatíveis com os dois slots.
 
-Configure `HOST`, `USERNAME`, `SSH_PRIVATE_KEY`, `PORT`, `GHCR_TOKEN` e `SSH_HOST_FINGERPRINT` no environment GitHub `production`. [docs/production.md](docs/production.md) contém o passo a passo de SSH, secrets, DNS, SSL, infraestrutura, primeiro deploy e rollback.
+Configure `HOST`, `USERNAME`, `SSH_PRIVATE_KEY`, `PORT` e `SSH_HOST_FINGERPRINT` no environment GitHub `production`. O registry usa token temporário do job; `GHCR_TOKEN` é um override opcional somente para leitura. [docs/production.md](docs/production.md) contém o passo a passo de SSH, secrets, DNS, SSL, infraestrutura, primeiro deploy e rollback.
 
 Resultados e comandos reproduzíveis: [docs/validation.md](docs/validation.md). O teste de vídeo usa uma origem XUI simulada e HLS gerado pelo FFmpeg. Houve transferência real WebRTC entre WebPlayer e ponte Android em Chromium; compilação e testes JVM do APK também foram executados. Credenciais reais XUI e reprodução em aparelho Android ainda precisam de homologação.
 

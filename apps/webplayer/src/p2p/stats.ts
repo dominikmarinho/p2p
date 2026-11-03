@@ -23,6 +23,8 @@ export function trackStats(engine: EventSource, update: (stats: P2PStats) => voi
     update({ ...stats }); previous = now; previousDown = stats.p2pDownloaded; previousUp = stats.p2pUploaded;
   }, 1000);
   return {
+    snapshot: () => ({ ...stats, peers: peers.size, ...trafficPercentages(stats.httpDownloaded, stats.p2pDownloaded) }),
+    clearPeers: () => peers.clear(),
     addHttp: (bytes: number) => { stats.httpDownloaded += bytes; },
     destroy: () => { clearInterval(timer); engine.removeEventListener('onPeerConnect', connected); engine.removeEventListener('onPeerClose', closed); engine.removeEventListener('onChunkDownloaded', downloaded); engine.removeEventListener('onChunkUploaded', uploaded); },
   };

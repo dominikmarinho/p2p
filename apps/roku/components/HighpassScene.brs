@@ -17,6 +17,8 @@ sub init()
     m.favorites = []
     m.tasks = []
     m.settingsP2p = true
+    m.fallbackUsed = false
+    m.pendingSeek = 0
     m.login.observeField("buttonSelected", "onLoginButton")
     m.nav.observeField("itemSelected", "onNav")
     m.catalog.observeField("itemSelected", "onItem")
@@ -167,6 +169,7 @@ sub onPlayback(event as Object)
     result = event.getData()
     if not result.ok then m.status.text = result.error: return
     m.playback = result.data
+    m.fallbackUsed = false
     content = CreateObject("roSGNode", "ContentNode")
     content.url = "https://p2p.remoto.api.br" + m.playback.url
     content.streamFormat = "hls"
@@ -197,7 +200,24 @@ sub onStats(event as Object)
     m.badge.text = "HTTP " + http.toStr() + "% · P2P " + p2p.toStr() + "%" + Chr(10) + value.peers.toStr() + " peers · " + (value.totalDownloaded / 1048576).toStr() + " MB (gateway)"
 end sub
 sub onVideoState()
-    if m.video.state = "error" then m.status.text = "Não foi possível reproduzir. Volte e tente novamente."
+    if m.video.state = "playing" and m.pendingSeek > 0
+        m.video.seek = m.pendingSeek
+        m.pendingSeek = 0
+    end if
+    if m.video.state <> "error" then return
+    if not m.fallbackUsed and m.playback.directUrl <> invalid and m.playback.directUrl <> m.playback.url
+        m.fallbackUsed = true
+        m.pendingSeek = m.video.position
+        content = CreateObject("roSGNode", "ContentNode")
+        content.url = "https://p2p.remoto.api.br" + m.playback.directUrl
+        content.streamFormat = m.playback.sourceFormat
+        content.title = m.selected.name
+        content.HttpHeaders = ["Authorization: Bearer " + m.token]
+        m.video.content = content
+        m.video.control = "play"
+    else
+        m.status.text = "Não foi possível reproduzir. Volte e tente novamente."
+    end if
 end sub
 sub onLoggedOut()
     m.token = ""

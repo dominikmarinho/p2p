@@ -70,6 +70,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     const address = app.server.address(); const base = address && typeof address !== 'string' ? `http://127.0.0.1:${address.port}` : '';
     const gateway = permission.relay && !service.isRelayRequest(request);
     if (gateway) reply.raw.setTimeout(30000);
+    if (gateway && permission.kind !== 'live' && permission.extension !== 'm3u8') await relay.httpOnly(grant);
     if (gateway && !upstream.pathname.endsWith('.m3u8') && !request.headers.range) {
       const buffer = await relay.load(grant, request.url, base);
       if (buffer) return reply.type('video/mp2t').send(buffer);

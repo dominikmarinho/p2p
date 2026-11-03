@@ -1,7 +1,7 @@
 import { NativeSegmentCore } from './native-core.js';
 import type { Playback } from '../api.js';
 
-export interface AndroidBridgeApi { init(playback: Playback, enabled: boolean): void; playlist(uri: string, text: string): void; load(id: string, uri: string, position: number, length: number): void; http(bytes: number): void; destroy(): void }
+export interface AndroidBridgeApi { init(playback: Playback, enabled: boolean): void; playlist(uri: string, text: string): void; load(id: string, uri: string, position: number, length: number): void; http(bytes: number): void; httpOnly(): void; destroy(): void }
 
 declare global {
   interface Window {
@@ -24,6 +24,7 @@ window.HighpassBridge = {
       }
     }).catch(() => window.NativeSegments?.fallback(id));
   },
+  httpOnly: () => core?.httpOnly(),
   http: (bytes) => core?.addHttp(bytes),
   destroy: () => { core?.destroy(); core = undefined; },
 };

@@ -56,6 +56,7 @@ export class RokuRelay {
       void relay.page.evaluate(({ key, url }) => { const target = window as unknown as { HighpassBridge: { load(id: string, uri: string, position: number, length: number): void } }; target.HighpassBridge.load(key, url, 0, -1); }, { key: request, url: base + uri }).catch(() => finish(null));
     });
   }
+  async httpOnly(id: string) { const relay = this.sessions.get(id); if (relay) await relay.page.evaluate(() => { const target = window as unknown as { HighpassBridge: { httpOnly(): void } }; target.HighpassBridge.httpOnly(); }).catch(() => undefined); }
   stats(id: string) { const relay = this.sessions.get(id); if (relay) { relay.lastUsed = Date.now(); return { ...relay.stats, transport: 'webrtc-gateway', scope: 'gateway-to-swarm' }; } return undefined; }
   http(id: string, bytes: number) { const relay = this.sessions.get(id); if (relay) void relay.page.evaluate((count) => { const target = window as unknown as { HighpassBridge: { http(bytes: number): void } }; target.HighpassBridge.http(count); }, bytes).catch(() => undefined); }
 }

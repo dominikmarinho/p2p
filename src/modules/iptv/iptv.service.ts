@@ -155,7 +155,7 @@ export class IptvService {
     const folder = grant.kind === 'episode' ? 'series' : grant.kind === 'movie' ? 'movie' : 'live';
     const url = new URL(`${folder}/${encodeURIComponent(session.username)}/${encodeURIComponent(session.password)}/${grant.id}.${grant.extension}`, this.origin());
     const directUrl = this.resourceUrl(grantId, url);
-    return { url: grant.kind !== 'live' && grant.extension !== 'm3u8' ? `/api/iptv/vod/${grantId}/index.m3u8` : directUrl, directUrl, statsPath: `/api/iptv/traffic/${grantId}`, trackerPath: `/api/iptv/tracker/${grantId}`, swarmId: grant.swarmId, expiresAt: grant.expiresAt, isLive: grant.kind === 'live', isHls: true, iceServers: this.env.RTC_ICE_SERVERS, config: await this.configuration() };
+    return { url: grant.kind !== 'live' && grant.extension !== 'm3u8' ? `/api/iptv/vod/${grantId}/index.m3u8` : directUrl, directUrl, sourceFormat: grant.extension, statsPath: `/api/iptv/traffic/${grantId}`, trackerPath: `/api/iptv/tracker/${grantId}`, swarmId: grant.swarmId, expiresAt: grant.expiresAt, isLive: grant.kind === 'live', isHls: true, iceServers: this.env.RTC_ICE_SERVERS, config: await this.configuration() };
   }
   isRelayRequest(request: { headers: Record<string, unknown>; raw: { socket: { remoteAddress: string | undefined } } }) {
     return request.headers['x-highpass-relay'] === this.relaySecret && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.raw.socket.remoteAddress ?? '');

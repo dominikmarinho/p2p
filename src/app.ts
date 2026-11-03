@@ -70,11 +70,10 @@ export function buildApp(env: Environment) {
     await peers.start();
     await tracker.start();
   });
+  app.addHook('preClose', async () => { await vod.close(); await relay.close(); });
   app.addHook('onClose', async () => {
     peers.close();
     tracker.close();
-    await vod.close();
-    await relay.close();
     const results = await Promise.allSettled([pool.end(), closeRedis(redis)]);
     for (const result of results) if (result.status === 'rejected') app.log.error({ err: result.reason }, 'Erro ao fechar dependência');
   });

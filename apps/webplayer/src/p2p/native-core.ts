@@ -8,6 +8,7 @@ const runtimeId = (url: string, start?: number, end?: number) => start !== undef
 
 export class NativeSegmentCore {
   readonly core: Core;
+  private httpMode = false;
   private readonly stats;
   private readonly streams = new Map<string, StreamProperties>();
   constructor(private readonly playback: Playback, enabled: boolean, onStats: (stats: P2PStats) => void) {
@@ -15,6 +16,7 @@ export class NativeSegmentCore {
     this.core.setManifestResponseUrl(absoluteUrl(playback.url)); this.core.setIsLive(playback.isLive); this.stats = trackStats(this.core, onStats);
   }
   observePlaylist(uri: string, text: string): void {
+    if (this.httpMode) return;
     const lines = text.split(/\r?\n/).map((line) => line.trim());
     if (!lines.some((line) => line === '#EXTM3U')) return;
     if (lines.some((line) => line.startsWith('#EXT-X-STREAM-INF:'))) {
@@ -50,6 +52,7 @@ export class NativeSegmentCore {
     this.core.updatePlayback(segments[0]?.startTime ?? 0, 1);
   }
   async load(url: string, position: number, length: number): Promise<ArrayBuffer | null> {
+    if (this.httpMode) return null;
     if (position > 0 && length <= 0) return null;
     const id = runtimeId(url, position > 0 || length > 0 ? position : undefined, length > 0 ? position + length - 1 : undefined);
     if (!this.core.hasSegment(id) || !this.core.isSegmentLoadable(id)) return null;
@@ -59,5 +62,6 @@ export class NativeSegmentCore {
     });
   }
   addHttp(bytes: number) { this.stats.addHttp(bytes); }
-  destroy() { this.stats.destroy(); this.core.destroy(); }
+  httpOnly() { if (!this.httpMode) { this.httpMode = true; this.stats.clearPeers(); this.core.destroy(); } }
+  destroy() { this.stats.destroy(); if (!this.httpMode) this.core.destroy(); }
 }
