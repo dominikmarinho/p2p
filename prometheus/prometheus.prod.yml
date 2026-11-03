@@ -31,7 +31,19 @@ scrape_configs:
           - https://p2p.remoto.api.br/health/ready
           - https://p2p.remoto.api.br/player/
           - https://p2p.remoto.api.br/grafana/api/health
-          - http://xuione.remoto.api.br/player_api.php
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+  - job_name: highpass_origin_tcp
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets: ['xuione.remoto.api.br:80']
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

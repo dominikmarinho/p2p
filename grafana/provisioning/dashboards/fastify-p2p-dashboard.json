@@ -665,7 +665,7 @@
     },
     {
       "id": 20,
-      "title": "Disponibilidade das URLs públicas",
+      "title": "Disponibilidade pública e TCP da origem",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -695,11 +695,12 @@
             "type": "prometheus",
             "uid": "Prometheus"
           },
-          "expr": "probe_success{job=\"highpass_public_probe\"}",
+          "expr": "probe_success{job=~\"highpass_public_probe|highpass_origin_tcp\"}",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "HTTP 200 nos serviços públicos; TCP na origem XUI, que exige autenticação na API."
     },
     {
       "id": 21,
@@ -1308,5 +1309,5 @@
   "timezone": "browser",
   "title": "Fastify P2P Engine - Dashboard",
   "uid": "fastify-p2p-dashboard",
-  "version": 2
+  "version": 3
 }

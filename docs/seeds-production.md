@@ -17,7 +17,7 @@ Player → HTTP de contingência → engine/fallback → XUI ou cache HLS VOD
 - A quota de conexões da linha continua valendo para os clientes. Somente workers internos autenticados por segredo e loopback recebem o papel de seed; headers fornecidos por um cliente externo não concedem essa exceção.
 - VOD usa remux HLS compartilhado por conteúdo. Cada pedido continua verificando a sessão; URLs da playlist pertencem ao grant de quem solicitou. Até quatro caches VOD, 2 GiB por preparação e 30min sem uso. Codecs incompatíveis ainda exigem transcodificação externa.
 - O arquivo original é contingência quando HLS não pode ser preparado. Web/Android/Roku sondam a recuperação e voltam ao HLS preservando a posição, quando a falha foi de rede/preparação. No Roku o aparelho recebe HTTP do gateway; P2P ocorre entre gateway e swarm.
-- A produção tem um app HTTP separado em loopback 3004 (`P2P_SEED_ENABLED=false`) e upstream `backup` no Nginx. Compartilha sessões/grants Redis e banco. Isso cobre queda do processo principal no mesmo host; não fornece HA de host, PostgreSQL ou Redis.
+- A produção tem um app HTTP separado em loopback 3004 (`P2P_SEED_ENABLED=false`) e upstream `backup` no Nginx. Compartilha sessões/grants Redis e banco. Nginx repete leituras na contingência em erros de conexão e HTTP 502/503/504; POSTs já enviados mantêm a proteção contra repetição. Isso cobre queda do processo principal no mesmo host; não fornece HA de host, PostgreSQL ou Redis.
 
 ## Compatibilidade XUI e latência
 
@@ -55,7 +55,7 @@ sudo bash scripts/setup-monitoring-host.sh
 bash scripts/observability.sh
 ```
 
-O timer systemd coleta stats Docker e contadores das interfaces físicas a cada 15s. O Node Exporter lê textfiles e recursos do host em volumes somente leitura; não recebe Docker socket. Blackbox Exporter mede disponibilidade, fases HTTP/TLS e validade de certificados. Exporters/Prometheus ficam na rede interna; Grafana é publicado por HTTPS em `/grafana/`.
+O timer systemd coleta stats Docker e contadores das interfaces físicas a cada 15s. O Node Exporter lê textfiles e recursos do host em volumes somente leitura; não recebe Docker socket. Blackbox Exporter mede disponibilidade, fases HTTP/TLS e validade de certificados nas URLs públicas; na origem XUI verifica TCP, sem fazer tentativas de login sem credenciais. Exporters/Prometheus ficam na rede interna; Grafana é publicado por HTTPS em `/grafana/`.
 
 No Control Plane, **Seeds de mídia** mostra leases, prontidão, ingestão HTTP e upload WebRTC real do worker; permite reiniciar um seed. **Monitoramento** mostra memória, pool pg, ping Redis, falhas XUI e telemetria dos players. Atualização de 5s; dados de processo/seed pertencem à instância atendendo a chamada.
 

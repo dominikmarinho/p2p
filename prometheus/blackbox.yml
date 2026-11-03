@@ -9,3 +9,8 @@ modules:
       valid_status_codes: [200]
       tls_config:
         insecure_skip_verify: false
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: ip4
