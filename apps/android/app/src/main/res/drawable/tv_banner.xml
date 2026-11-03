@@ -1,0 +1,1 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item><shape><size android:width="320dp" android:height="180dp"/><solid android:color="#0B1019"/></shape></item><item android:width="100dp" android:height="100dp" android:gravity="center" android:drawable="@drawable/ic_highpass"/></layer-list>

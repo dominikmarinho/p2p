@@ -1,0 +1,106 @@
+name: highpass-local
+x-app-environment: &app-environment
+  NODE_ENV: development
+  DATABASE_URL: postgresql://${POSTGRES_USER:-highpass_user}:${POSTGRES_PASSWORD:-local_postgres_only}@postgres:5432/${POSTGRES_DB:-highpass_db}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-local_redis_only}
+  JWT_SECRET: ${JWT_SECRET:-local-only-change-this-secret-at-least-32-characters}
+  TRUST_PROXY_HOPS: 0
+  ADMIN_BOOTSTRAP_KEY: ${ADMIN_BOOTSTRAP_KEY:-local-admin-key-change-before-production}
+  CONFIG_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+  XUI_ALLOWED_HOSTS: ${XUI_ALLOWED_HOSTS:-localhost,127.0.0.1}
+  XUI_ALLOW_HTTP: ${XUI_ALLOW_HTTP:-true}
+  METRICS_TOKEN: ${METRICS_TOKEN:-local-metrics-token-change-before-production}
+  XUI_BASE_URL: ${XUI_BASE_URL:-http://xuione.remoto.api.br}
+  PUBLIC_ENGINE_URL: ${PUBLIC_ENGINE_URL:-https://p2p.remoto.api.br}
+  RTC_ICE_SERVERS: ${RTC_ICE_SERVERS:-[{"urls":"stun:stun.l.google.com:19302"}]}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-highpass_db}
+      POSTGRES_USER: ${POSTGRES_USER:-highpass_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_postgres_only}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-local_redis_only}
+    command: ["/bin/sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --maxmemory 128mb --maxmemory-policy noeviction --save ''"]
+    ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migration-runner:
+    build: .
+    image: highpass-microservice:local
+    command: ["node", "dist/db/migrate.js"]
+    environment: *app-environment
+    healthcheck: { disable: true }
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+  app:
+    build: .
+    image: highpass-microservice:local
+    init: true
+    environment: *app-environment
+    ports: ["127.0.0.1:3000:3000"]
+    stop_grace_period: 30s
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migration-runner: { condition: service_completed_successfully }
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    restart: unless-stopped
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-local-metrics-token-change-before-production}
+    entrypoint: [/bin/sh, -c]
+    command:
+      - 'umask 077; printf "%s" "$$METRICS_TOKEN" > /tmp/metrics-token; exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=15d --storage.tsdb.retention.size=2GB'
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: [CMD, wget, -q, --spider, 'http://127.0.0.1:9090/-/ready']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      app: { condition: service_healthy }
+  grafana:
+    image: grafana/grafana:13.3.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:3003:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-local-grafana-change-before-production}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    healthcheck:
+      test: [CMD, wget, -q, --spider, 'http://127.0.0.1:3000/api/health']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      prometheus: { condition: service_healthy }
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

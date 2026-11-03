@@ -1,0 +1,13 @@
+name: Build and deploy ecosystem
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  pipeline:
+    uses: ./.github/workflows/ci-cd.yml
+    secrets: inherit

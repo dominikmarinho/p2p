@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+scrape_configs:
+  - job_name: fastify_p2p_app
+    metrics_path: /metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials_file: /tmp/metrics-token
+    static_configs:
+      - targets: ['p2p-blue:3000']
+        labels: { environment: production, service: p2p-engine, slot: blue }
+      - targets: ['p2p-green:3000']
+        labels: { environment: production, service: p2p-engine, slot: green }
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

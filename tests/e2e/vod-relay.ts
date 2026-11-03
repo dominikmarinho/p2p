@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { promisify } from 'node:util';
+import { execFile as execFileCallback } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID, createHash } from 'node:crypto';
+import { chromium } from 'playwright';
+import { xuiFixture } from '../helpers/xui-fixture.js';
+import { buildApp } from '../../src/app.js';
+import { loadEnvironment } from '../../src/config/env.js';
+import type { Playback } from '../../apps/webplayer/src/api.js';
+const execFile = promisify(execFileCallback);
+if (process.env.NODE_ENV !== 'test') throw new Error('NODE_ENV=test obrigatório');
+const folder = await mkdtemp(join(tmpdir(), 'highpass-vod-test-'));
+await execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=24', '-t', '20', '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '48', '-movflags', '+faststart', join(folder, 'movie.mp4')]);
+const source = xuiFixture(folder); const origin = await source.listen({ host: '127.0.0.1', port: 0 });
+const app = buildApp(loadEnvironment({ ...process.env, XUI_BASE_URL: origin, XUI_ALLOW_HTTP: 'true', RATE_LIMIT_MAX: '10000', RATE_LIMIT_NAMESPACE: `vod-browser:${randomUUID()}:`, RTC_ICE_SERVERS: '[]', VOD_CACHE_DIR: folder }));
+const address = await app.listen({ host: '127.0.0.1', port: 0 });
+const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'] });
+try {
+  const context = await browser.newContext(); const page = await context.newPage();
+  assert.equal((await context.request.post(address + '/api/iptv/login', { data: { username: 'alice', password: 'secret-line' } })).status(), 200);
+  await page.goto(address + '/player/?tv=tizen'); await page.getByRole('button', { name: '▣ Filmes', exact: true }).click();
+  await page.getByRole('heading', { name: 'Filme de Teste' }).waitFor();
+  const segments: Buffer[] = [];
+  page.on('response', (response) => { if ((response.headers()['content-type'] ?? '').includes('video/mp2t')) void response.body().catch(async () => (await context.request.get(response.url())).body()).then((bytes) => segments.push(bytes)).catch((error: unknown) => console.log('segment body error', String(error))); });
+  await page.getByRole('button', { name: /Filme de Teste.*Filme/ }).click();
+  await page.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 0, undefined, { timeout: 30000 });
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid="http-percentage"]')?.textContent?.replace('%', '')) > 0);
+  for (let attempt = 0; attempt < 30 && !segments.length; attempt++) await page.waitForTimeout(100);
+  assert.ok(segments.length > 0, 'VOD remux deve reproduzir segmentos reais');
+  const login = await fetch(address + '/api/iptv/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'bob', password: 'secret-line' }) });
+  const { token } = await login.json() as { token: string }; const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const play = await fetch(address + '/api/iptv/playback', { method: 'POST', headers, body: JSON.stringify({ kind: 'movie', id: '2', client: 'roku' }) });
+  assert.equal(play.status, 200); const descriptor = await play.json() as Playback & { statsPath: string };
+  const response = await fetch(address + descriptor.url, { headers }); assert.equal(response.status, 200); const playlist = await response.text(); assert.ok(playlist.startsWith('#EXTM3U'));
+  const urls = playlist.split('\n').filter((line) => line.endsWith('.ts'));
+  assert.ok(urls.length > 0);
+  const first = urls[0]; assert.ok(first); const bytes = Buffer.from(await (await fetch(address + first, { headers })).arrayBuffer());
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), createHash('sha256').update(segments[0]!).digest('hex'), 'Remux de duas linhas deve gerar bytes idênticos');
+  let stats = { p2pDownloaded: 0, httpPercentage: 0, p2pPercentage: 0, peers: 0, scope: '' };
+  for (let attempt = 0; attempt < 40; attempt++) {
+    for (const url of urls.slice(0, 3)) await (await fetch(address + url, { headers })).arrayBuffer();
+    await new Promise<void>((done) => setTimeout(done, 750));
+    const result = await fetch(address + descriptor.statsPath, { headers }); assert.equal(result.status, 200); stats = await result.json() as typeof stats;
+    if (stats.p2pDownloaded > 0) break;
+  }
+  assert.ok(stats.p2pDownloaded > 0, `Gateway Roku deve receber P2P: ${JSON.stringify(stats)}`);
+  assert.equal(stats.scope, 'gateway-to-swarm'); assert.equal(stats.httpPercentage + stats.p2pPercentage, 100);
+  await page.screenshot({ path: 'docs/previews/vod-traffic.png', fullPage: true });
+  await page.getByRole('button', { name: '▣ Filmes', exact: true }).focus(); await page.keyboard.press('ArrowDown');
+  assert.notEqual(await page.evaluate(() => document.activeElement?.textContent), '▣Filmes');
+  console.log(`VOD e gateway Roku aprovados: ${stats.p2pDownloaded} bytes P2P; ${stats.peers} peer(s); HTTP/P2P somam 100%; HLS reproduzido e SHA-256 idêntico`);
+} finally { await browser.close(); await app.close(); await source.close(); await rm(folder, { recursive: true, force: true }); }

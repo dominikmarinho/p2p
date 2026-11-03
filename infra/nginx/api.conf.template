@@ -1,0 +1,77 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name __DOMAIN__;
+    ssl_certificate /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:highpassSSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    client_max_body_size 16k;
+    access_log /var/log/nginx/highpass.access.log highpass;
+    limit_req_status 429;
+    location ^~ /internal/ { return 404; }
+    location = /api/admin/login {
+        limit_req zone=highpass_auth burst=5 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+    }
+    location ^~ /api/iptv/vod/ {
+        limit_req zone=highpass_api_limit burst=20 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+        proxy_buffering off;
+    }
+    location = /metrics { return 404; }
+    location = /api/iptv/login {
+        limit_req zone=highpass_auth burst=5 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+    }
+    location ^~ /api/iptv/media/ {
+        limit_req zone=highpass_api_limit burst=20 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+        proxy_buffering off;
+    }
+    location = /p2p/authorize {
+        limit_req zone=highpass_auth burst=5 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+    }
+    location = /p2p/ws {
+        limit_req zone=highpass_api_limit burst=20 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+        proxy_buffering off;
+    }
+    location ^~ /auth/ {
+        limit_req zone=highpass_auth burst=5 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+    }
+    location = /ws {
+        limit_req zone=highpass_api_limit burst=20 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+        proxy_buffering off;
+    }
+    location = / { return 302 /player/; }
+    location / {
+        limit_req zone=highpass_api_limit burst=20 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+    }
+}

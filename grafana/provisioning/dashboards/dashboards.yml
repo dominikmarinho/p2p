@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: Highpass P2P
+    orgId: 1
+    folder: Highpass
+    type: file
+    disableDeletion: false
+    editable: false
+    updateIntervalSeconds: 15
+    options:
+      path: /etc/grafana/provisioning/dashboards

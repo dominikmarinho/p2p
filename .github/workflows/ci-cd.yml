@@ -1,0 +1,192 @@
+name: CI/CD
+on:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: highpass-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run typecheck:web
+      - run: npm run lint
+      - run: npm run build:tv
+      - name: Validate Prometheus configuration
+        run: |
+          docker run --rm --entrypoint /bin/sh \
+            -v "$GITHUB_WORKSPACE/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.15.1 \
+            -c 'printf validation-only > /tmp/metrics-token; promtool check config /etc/prometheus/prometheus.yml /etc/prometheus/prometheus.prod.yml'
+  tests:
+    needs: lint-typecheck
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: highpass_test
+          POSTGRES_USER: highpass_test
+          POSTGRES_PASSWORD: ci-postgres-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U highpass_test -d highpass_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: silent
+      DATABASE_URL: postgresql://highpass_test:ci-postgres-password@127.0.0.1:5432/highpass_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ci-redis-password
+      JWT_SECRET: ci-only-secret-at-least-thirty-two-characters
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Configure isolated Redis password
+        run: docker exec "${{ job.services.redis.id }}" redis-cli CONFIG SET requirepass "$REDIS_PASSWORD"
+      - run: npm test
+      - run: npm run db:migrate
+      - name: Check migration idempotency
+        run: npm run db:migrate
+      - run: npm run test:integration
+      - name: Install browser and video test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - run: npm run build:server
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: webplayer-previews
+          path: docs/previews
+          if-no-files-found: ignore
+  android:
+    needs: lint-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            apps/android/**/*.gradle*
+            apps/android/gradle/wrapper/gradle-wrapper.properties
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - run: apps/android/gradlew -p apps/android :app:assembleDebug :app:testDebugUnitTest --no-daemon
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: highpass-android-debug
+          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+  build-push:
+    needs: [tests, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - id: image
+        name: Normalize GHCR name
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+  deploy:
+    needs: [lint-typecheck, tests, build-push]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: highpass-production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Require verified SSH host and credentials
+        env:
+          DEPLOY_HOST: ${{ secrets.HOST }}
+          DEPLOY_USER: ${{ secrets.USERNAME }}
+          DEPLOY_PORT: ${{ secrets.PORT }}
+          HOST_FINGERPRINT: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          DEPLOY_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REGISTRY_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_KEY"
+          test -n "$REGISTRY_TOKEN"
+          test -n "$HOST_FINGERPRINT"
+          case "$HOST_FINGERPRINT" in SHA256:*) ;; *) exit 1 ;; esac
+      - name: Package exact revision of deployment files
+        shell: bash
+        run: |
+          tar -czf /tmp/highpass-release.tgz docker-compose.prod.yml scripts/deploy.sh scripts/observability.sh prometheus grafana
+          echo "RELEASE_B64=$(base64 -w0 /tmp/highpass-release.tgz)" >> "$GITHUB_ENV"
+      - name: Deploy verified image over SSH
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          IMAGE_NAME: ${{ needs.build-push.outputs.image }}
+          IMAGE_TAG: ${{ github.sha }}
+          GHCR_USERNAME: ${{ vars.GHCR_USERNAME || github.repository_owner }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.PORT }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          command_timeout: 15m
+          envs: IMAGE_NAME,IMAGE_TAG,GHCR_USERNAME,GHCR_TOKEN,RELEASE_B64
+          script: |
+            set -eu
+            umask 077
+            test -n "$GHCR_TOKEN"
+            test "${#IMAGE_TAG}" -eq 40
+            release_dir="/opt/highpass/releases/$IMAGE_TAG"
+            mkdir -p "$release_dir"
+            printf '%s' "$RELEASE_B64" | base64 --decode | tar -xz -C "$release_dir"
+            DOCKER_CONFIG=$(mktemp -d)
+            export DOCKER_CONFIG
+            trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            unset GHCR_TOKEN
+            export APP_IMAGE="$IMAGE_NAME:$IMAGE_TAG"
+            bash "$release_dir/scripts/deploy.sh"

@@ -1,0 +1,15 @@
+{
+  "id": "br.api.remoto.highpass",
+  "version": "1.0.0",
+  "vendor": "Highpass",
+  "type": "web",
+  "main": "index.html",
+  "title": "Highpass Play",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "uiRevision": 2,
+  "resolution": "1920x1080",
+  "requiredMemory": 256,
+  "disableBackHistoryAPI": true,
+  "requiredACG": []
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component name="HighpassScene" extends="Scene"><script type="text/brightscript" uri="HighpassScene.brs"/>
+<children>
+<Label id="brand" text="HIGH PASS / PLAY" translation="[55,35]" width="1100" color="0x68DFB0FF"/>
+<Label id="status" text="Entre com os dados da sua assinatura" translation="[55,95]" width="1150" height="70"/>
+<ButtonGroup id="login" translation="[55,210]" buttons="[&quot;Usuário&quot;,&quot;Senha&quot;,&quot;Entrar&quot;]"/>
+<LabelList id="nav" translation="[40,200]" itemSize="[230,55]" numRows="6" visible="false"/>
+<LabelList id="catalog" translation="[300,200]" itemSize="[860,48]" numRows="9" visible="false"/>
+<Video id="video" width="1280" height="720" visible="false"/>
+<Rectangle id="badgeBg" translation="[860,35]" width="380" height="105" color="0x0B1019E8" visible="false"/>
+<Label id="badge" translation="[875,45]" width="350" height="90" wrap="true" visible="false"/>
+<Timer id="statsTimer" duration="3" repeat="true"/>
+</children></component>

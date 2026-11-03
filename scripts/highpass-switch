@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $# -eq 1 && ( "$1" == 3001 || "$1" == 3002 ) ]] || { echo 'Use porta 3001 ou 3002' >&2; exit 2; }
+exec 9>/run/lock/highpass-switch.lock
+flock 9
+config=/etc/nginx/highpass/upstream.conf
+backup=$(mktemp /etc/nginx/highpass/upstream.backup.XXXXXX)
+candidate=$(mktemp /etc/nginx/highpass/upstream.candidate.XXXXXX)
+trap 'rm -f "$backup" "$candidate"' EXIT
+cp -- "$config" "$backup"
+printf 'upstream highpass_api { server 127.0.0.1:%s; keepalive 64; }\n' "$1" > "$candidate"
+chmod 644 "$candidate"
+mv -- "$candidate" "$config"
+if ! /usr/sbin/nginx -t || ! /usr/bin/systemctl reload nginx; then
+  cp -- "$backup" "$config"
+  /usr/sbin/nginx -t && /usr/bin/systemctl reload nginx
+  exit 1
+fi

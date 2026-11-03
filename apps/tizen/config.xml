@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://p2p.remoto.api.br/highpass" version="1.0.0" viewmodes="maximized">
+  <tizen:application id="HighpassTV.Play" package="HighpassTV" required_version="8.0"/>
+  <content src="index.html"/><name>Highpass Play</name><icon src="icon.png"/>
+  <tizen:profile name="tv-samsung"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <access origin="https://p2p.remoto.api.br" subdomains="false"/>
+  <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
+</widget>
