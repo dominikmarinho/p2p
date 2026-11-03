@@ -15,11 +15,13 @@ export class NativeSegmentCore {
   private readonly segmentTimes = new Map<string, number>();
   private readonly playlists = new Map<string, Segment[]>();
   private readonly policy: DeliveryPolicy | undefined;
+  private readonly retryPeerFailures: boolean;
   private readonly downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') this.policy?.recovered(segment.runtimeId); };
   private readonly stats;
   private readonly streams = new Map<string, StreamProperties>();
   constructor(private readonly playback: Playback, enabled: boolean, onStats: (stats: P2PStats) => void, seeder = false) {
     enabled = enabled || Boolean(playback.delivery);
+    this.retryPeerFailures = enabled && !seeder;
     this.core = new Core({ swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: seeder ? 64 : 32, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled });
     this.core.setManifestResponseUrl(absoluteUrl(playback.url)); this.core.setIsLive(playback.isLive); this.stats = trackStats(this.core, onStats); this.reporter = seeder ? undefined : new PlaybackReporter(playback, 'bridge', this.stats.snapshot);
     this.policy = !seeder && playback.delivery && enabled ? new DeliveryPolicy(playback, (allowed) => { if (!this.httpMode) { this.core.applyDynamicConfig({ simultaneousHttpDownloads: allowed ? 1 : 0 }); } }) : undefined;
@@ -71,6 +73,7 @@ export class NativeSegmentCore {
     const playhead = this.segmentTimes.get(id);
     if (playhead !== undefined) this.core.updatePlayback(playhead, 1);
     if (!this.core.hasSegment(id) || !this.core.isSegmentLoadable(id)) return null;
+    if (!this.policy && this.retryPeerFailures) this.core.applyDynamicConfig({ simultaneousHttpDownloads: 1 });
     this.policy?.begin(id, playhead ?? 0);
     return new Promise<ArrayBuffer>((resolve, reject) => {
       let settled = false; let retry: ReturnType<typeof setTimeout> | undefined;
@@ -78,10 +81,10 @@ export class NativeSegmentCore {
       const timer = setTimeout(() => { this.core.abortSegmentLoading(id); finish(); reject(new Error('P2P timeout')); }, 12000);
       const failed = (error: unknown) => {
         if (settled) return;
-        if (this.policy && !this.httpMode && !(error instanceof CoreRequestError && error.type === 'aborted')) {
+        if (this.retryPeerFailures && !this.httpMode && !(error instanceof CoreRequestError && error.type === 'aborted')) {
           // A refused HTTP attempt must not tear down peer discovery during
           // the ICE handshake. Retry the same request within its watchdog.
-          if (this.stats.snapshot().peers > 0) this.policy.retryP2P();
+          if (this.stats.snapshot().peers > 0) { if (this.policy) this.policy.retryP2P(); else this.core.applyDynamicConfig({ simultaneousHttpDownloads: 0 }); }
           retry ??= setTimeout(() => { retry = undefined; request(); }, 250); return;
         }
         finish(); reject(error instanceof Error ? error : new Error('Falha P2P'));
