@@ -87,16 +87,17 @@ try {
     const received = await load(viewer.page, kind, address + target); const expected = await (await viewer.context.request.get(address + target)).body(); assert.equal(hash(received), hash(expected));
     await viewer.page.waitForFunction(() => (window as unknown as TestWindow).seedTest.stats.p2pDownloaded > 0);
     if (kind === 'movie') {
-      // ExoPlayer refreshes an EVENT playlist while the origin keeps producing
-      // segments. Publish that same fresh snapshot before seeking in this Core.
-      await viewer.page.evaluate(({ text, uri }) => (window as unknown as TestWindow).HighpassBridge.playlist(uri, text), { text, uri: address + viewer.playback.url });
       await viewer.page.evaluate(() => (window as unknown as TestWindow).HighpassBridge.playhead(130));
       let warmed = false; for (let attempt = 0; attempt < 100; attempt++) {
         const state = (await app.inject({ url: '/api/admin/seeds', headers: admin })).json<{ streams: { swarm: string; warmPositions: number[] }[] }>();
         if (state.streams.some((seed) => seed.swarm === viewer.playback.swarmId && seed.warmPositions.some((position) => Math.abs(position - 130) < 4))) { warmed = true; break; }
         await viewer.page.waitForTimeout(200);
       } assert.ok(warmed, 'Seed deve confirmar a preparação do seek antes do teste sem HTTP');
-      const far = text.split('\n').find((line) => line.endsWith('chunk000032.ts')); assert.ok(far);
+      // ExoPlayer refreshes an EVENT playlist while the origin keeps producing
+      // segments. Publish that same fresh snapshot before seeking in this Core.
+      const refreshed = await (await viewer.context.request.get(address + viewer.playback.url)).text();
+      const far = refreshed.split('\n').find((line) => line.endsWith('chunk000032.ts')); assert.ok(far);
+      await viewer.page.evaluate(({ text, uri }) => (window as unknown as TestWindow).HighpassBridge.playlist(uri, text), { text: refreshed, uri: address + viewer.playback.url });
       const seek = await load(viewer.page, 'seek-130', address + far); assert.equal(hash(seek), hash(await (await viewer.context.request.get(address + far)).body()));
     }
     console.log(`Seed → ${kind}: ${received.length} bytes P2P com HTTP bloqueado, SHA-256 idêntico`);
