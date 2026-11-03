@@ -22,7 +22,7 @@ export class NativeSegmentCore {
   constructor(private readonly playback: Playback, enabled: boolean, onStats: (stats: P2PStats) => void, seeder = false) {
     enabled = enabled || Boolean(playback.delivery);
     this.retryPeerFailures = enabled && !seeder;
-    this.core = new Core({ swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: seeder ? 64 : 32, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled });
+    this.core = new Core({ swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: seeder ? 64 : 32, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: enabled && !seeder && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !enabled });
     this.core.setManifestResponseUrl(absoluteUrl(playback.url)); this.core.setIsLive(playback.isLive); this.stats = trackStats(this.core, onStats); this.reporter = seeder ? undefined : new PlaybackReporter(playback, 'bridge', this.stats.snapshot);
     this.policy = !seeder && playback.delivery && enabled ? new DeliveryPolicy(playback, (allowed) => { if (!this.httpMode) { this.core.applyDynamicConfig({ simultaneousHttpDownloads: allowed ? 1 : 0 }); } }) : undefined;
     this.core.addEventListener('onSegmentLoaded', this.downloaded);
