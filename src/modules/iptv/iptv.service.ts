@@ -2,6 +2,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import type { Environment } from '../../config/env.js';
 import { AppError } from '../../lib/errors.js';
+import { xuiTransportUrl } from '../../lib/xui-transport.js';
 import { decrypt, digest, encrypt, encryptResource, decryptResource } from '../../lib/secrets.js';
 import { accountDto, mediaGrantDto, sessionDto, type CatalogItem, type ClientSession, type ContentKind, type MediaGrant } from './iptv.dto.js';
 import type { EngineConfig } from '../admin/admin.dto.js';
@@ -36,6 +37,7 @@ export class IptvService {
   }
   async fetch(url: URL, options: RequestInit = {}): Promise<Response> {
     for (let hop = 0; hop < 4; hop++) {
+      url = xuiTransportUrl(url, this.env);
       this.checkUpstream(url);
       let response: Response;
       try { response = await fetch(url, { ...options, redirect: 'manual', signal: options.signal ?? AbortSignal.timeout(10000) }); }
@@ -163,6 +165,7 @@ export class IptvService {
   async recordHttp(grant: string, bytes: number) { if (bytes > 0) await this.redis.multi().hincrby(`highpass:traffic:${digest(grant)}`, 'httpDownloaded', bytes).expire(`highpass:traffic:${digest(grant)}`, 86400).exec(); }
   async traffic(grant: string) { const httpDownloaded = Number(await this.redis.hget(`highpass:traffic:${digest(grant)}`, 'httpDownloaded')) || 0; return { httpDownloaded, p2pDownloaded: 0, p2pUploaded: 0, peers: 0, totalDownloaded: httpDownloaded, httpPercentage: httpDownloaded ? 100 : 0, p2pPercentage: 0, transport: 'http', scope: 'engine-to-client' }; }
   resourceUrl(grantId: string, url: URL) {
+    url = xuiTransportUrl(url, this.env);
     this.checkUpstream(url);
     const sealed = encryptResource(JSON.stringify({ grantId, url: url.href }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
     return `/api/iptv/media/${grantId}/${sealed}`;
@@ -179,7 +182,7 @@ export class IptvService {
     try {
       const parsed = object(JSON.parse(decryptResource(sealed, this.env.CONFIG_ENCRYPTION_KEY, grantId)) as unknown);
       if (parsed.grantId !== grantId || typeof parsed.url !== 'string') throw new Error('Grant diferente');
-      const url = new URL(parsed.url); this.checkUpstream(url); return url;
+      const url = xuiTransportUrl(new URL(parsed.url), this.env); this.checkUpstream(url); return url;
     } catch { throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
   }
   rewriteManifest(text: string, base: URL, grantId: string): string {

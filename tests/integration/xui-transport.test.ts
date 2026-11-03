@@ -1,0 +1,20 @@
+import Fastify from 'fastify';
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { buildApp } from '../../src/app.js';
+import { loadEnvironment } from '../../src/config/env.js';
+const source = Fastify(); let app: ReturnType<typeof buildApp>; let origin = '';
+source.get<{ Querystring: { action?: string } }>('/player_api.php', (request) => request.query.action ? [{ stream_id: 1, name: 'Transport test' }] : { user_info: { auth: 1, status: 'Active', exp_date: String(Math.floor(Date.now() / 1000) + 3600), max_connections: '1' } });
+source.get('/live/:username/:password/:id', (_request, reply) => reply.redirect(`https://${new URL(origin).hostname}/auth/manifest`));
+source.get('/auth/manifest', (_request, reply) => reply.type('application/x-mpegurl').send(`#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nhttps://${new URL(origin).hostname}/hls/segment.ts\n`));
+source.get('/hls/segment.ts', () => Buffer.from([0x47, 1, 2, 3]));
+beforeAll(async () => { origin = await source.listen({ host: '127.0.0.1', port: 0 }); app = buildApp(loadEnvironment({ ...process.env, XUI_BASE_URL: origin, XUI_ALLOW_HTTP: 'true', XUI_PRESERVE_HTTP: 'true', RATE_LIMIT_MAX: '1000', RATE_LIMIT_NAMESPACE: `transport:${randomUUID()}:` })); await app.ready(); });
+afterAll(async () => { if (app !== undefined) await app.close(); await source.close(); });
+it('reproduz o redirect HTTPS legado pela origem HTTP permitida, sem desabilitar TLS global', async () => {
+ const login = await app.inject({ method: 'POST', url: '/api/iptv/login', payload: { username: 'test', password: 'test' } }); expect(login.statusCode).toBe(200);
+ const headers = { authorization: `Bearer ${login.json<{ token: string }>().token}` };
+ const play = await app.inject({ method: 'POST', url: '/api/iptv/playback', headers, payload: { kind: 'live', id: '1' } }); expect(play.statusCode).toBe(200);
+ const manifest = await app.inject({ url: play.json<{ url: string }>().url, headers }); expect(manifest.statusCode).toBe(200); expect(manifest.body).toContain('#EXTM3U');
+ const segment = manifest.body.split('\n').find(line => line.startsWith('/api/iptv/media/')); expect(segment).toBeDefined();
+ expect([...(await app.inject({ url: segment ?? '', headers })).rawPayload]).toEqual([0x47, 1, 2, 3]); expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).not.toBe('0');
+});

@@ -22,6 +22,7 @@ const environmentSchema = z.object({
   ADMIN_BOOTSTRAP_KEY: z.string().min(32).default('local-admin-key-change-before-production'),
   CONFIG_ENCRYPTION_KEY: z.string().regex(/^[a-f0-9]{64}$/).default('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
   XUI_ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1'),
+  XUI_PRESERVE_HTTP: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   XUI_ALLOW_HTTP: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   METRICS_TOKEN: z.string().min(32).default('local-metrics-token-change-before-production'),
   CHROMIUM_PATH: z.string().default(''),
