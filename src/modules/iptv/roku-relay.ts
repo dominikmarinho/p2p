@@ -1,3 +1,4 @@
+import { logger } from '../../lib/logger.js';
 import { randomUUID } from 'node:crypto';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import type { IptvService } from './iptv.service.js';
@@ -17,12 +18,12 @@ export class RokuRelay {
   private async remove(id: string) { const relay = this.sessions.get(id); this.sessions.delete(id); if (relay) { for (const request of relay.pending.values()) request.finish(null); await relay.context.close().catch(() => undefined); } }
   private async start(id: string, token: string, base: string): Promise<Relay | undefined> {
     if (this.sessions.size + this.starts.size >= this.service.env.P2P_RELAY_MAX_SESSIONS) return undefined;
-    this.browser ??= chromium.launch({ ...(this.service.env.CHROMIUM_PATH ? { executablePath: this.service.env.CHROMIUM_PATH } : {}), headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-features=WebRtcHideLocalIpsWithMdns'] });
+    this.browser ??= chromium.launch({ ...(this.service.env.CHROMIUM_PATH ? { executablePath: this.service.env.CHROMIUM_PATH } : {}), headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-features=WebRtcHideLocalIpsWithMdns'] }).then((browser) => { browser.once('disconnected', () => { this.browser = undefined; }); return browser; }).catch((error: unknown) => { this.browser = undefined; throw error; });
     let context: BrowserContext | undefined;
     try {
       const browser = await this.browser; context = await browser.newContext({ bypassCSP: true, extraHTTPHeaders: { 'x-highpass-relay': this.service.relaySecret } });
       await context.addCookies([{ name: 'HP_SESSION', value: token, domain: '127.0.0.1', path: '/api/iptv', httpOnly: true, secure: false, sameSite: 'Strict' }]);
-      const page = await context.newPage(); const pending = new Map<string, Pending>();
+      const page = await context.newPage(); page.once('close', () => { void this.remove(id); }); const pending = new Map<string, Pending>();
       const relay: Relay = { context, page, lastUsed: Date.now(), pending, stats: { httpDownloaded: 0, p2pDownloaded: 0, p2pUploaded: 0, peers: 0, totalDownloaded: 0, httpPercentage: 0, p2pPercentage: 0 } };
       await page.exposeFunction('relayComplete', (request: string, chunk: string, done: boolean) => {
         const task = pending.get(request); if (!task) return; const data = Buffer.from(chunk, 'base64'); task.size += data.length;
@@ -36,7 +37,7 @@ export class RokuRelay {
       const descriptor = await this.service.descriptor(id);
       await page.evaluate((value) => { const target = window as unknown as { HighpassBridge: { init(data: unknown, enabled: boolean): void } }; target.HighpassBridge.init(value, true); }, descriptor);
       this.sessions.set(id, relay); return relay;
-    } catch { await context?.close().catch(() => undefined); this.browser = undefined; return undefined; }
+    } catch { await context?.close().catch(() => undefined); logger.warn('Gateway indisponível; reprodução continuará por HTTP'); return undefined; }
   }
   async observe(id: string, token: string, base: string, uri: string, text: string) {
     let relay = this.sessions.get(id);

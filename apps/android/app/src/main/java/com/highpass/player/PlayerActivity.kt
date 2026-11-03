@@ -51,7 +51,7 @@ class PlayerActivity : ComponentActivity() {
         player = engine; playerView.player = engine
         engine.addListener(object : Player.Listener { override fun onPlayerError(error: PlaybackException) { stats.text = "Reprodução indisponível. Volte e selecione novamente."; playerView.showController() } })
         val item = MediaItem.Builder().setUri(Uri.parse(BuildConfig.ENGINE_URL + playback.getString("url"))).setMediaId(playback.getString("swarmId")).apply { if (playback.optBoolean("isHls")) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
-        engine.setMediaItem(item); if (resumePosition > 0) engine.seekTo(resumePosition); engine.prepare(); engine.playWhenReady = true
+        engine.setMediaItem(item, if (playback.optBoolean("isLive")) androidx.media3.common.C.TIME_UNSET else 0L); if (resumePosition > 0) engine.seekTo(resumePosition); engine.prepare(); engine.playWhenReady = true
         playerView.requestFocus()
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

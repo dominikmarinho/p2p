@@ -86,9 +86,14 @@ export class VodManager {
         if (gateway) await this.relay.observe(job.grant, clientToken(request), base, request.url, rewritten);
         return reply.type('application/vnd.apple.mpegurl').send(rewritten);
       }
-      const bytes = (await stat(file)).size;
-      if (!this.service.isRelayRequest(request)) { await this.service.recordHttp(job.grant, bytes); if (gateway) this.relay.http(job.grant, bytes); }
-      reply.header('Content-Length', bytes); return reply.type('video/mp2t').send(createReadStream(file));
+      reply.header('Content-Length', (await stat(file)).size);
+      const service = this.service; const relay = this.relay; const internal = service.isRelayRequest(request);
+      async function* chunks() {
+        let bytes = 0;
+        try { for await (const raw of createReadStream(file)) { const value: unknown = raw; const chunk = Buffer.isBuffer(value) ? value : Buffer.from(String(value)); bytes += chunk.length; yield chunk; } }
+        finally { if (!internal) { await service.recordHttp(job.grant, bytes); if (gateway) relay.http(job.grant, bytes); } }
+      }
+      return reply.type('video/mp2t').send(Readable.from(chunks()));
     });
   }
 }
