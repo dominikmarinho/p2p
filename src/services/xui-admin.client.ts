@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 
-const resultDto = z.object({ status: z.literal('STATUS_SUCCESS'), data: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]) });
+const serverDto = z.object({ id: z.union([z.number().int().positive(), z.string().regex(/^[1-9][0-9]*$/)]) });
+const resultDto = z.union([
+  z.array(serverDto.extend({ server_name: z.string() })),
+  z.object({ status: z.literal('STATUS_SUCCESS'), data: z.union([z.array(serverDto), z.record(z.string(), serverDto)]) }),
+]);
 
 /** Consulta administrativa somente de leitura; nunca encaminha credenciais ao player. */
 export async function checkXuiAdminConnection(base: URL, accessCode: string, apiKey: string) {
@@ -29,7 +33,8 @@ export async function checkXuiAdminConnection(base: URL, accessCode: string, api
     } finally { await reader.cancel().catch(() => undefined); }
     const result = resultDto.safeParse(JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown);
     if (!result.success) throw new Error('Resposta administrativa inválida');
-    return { ok: true, action: 'get_servers', serverCount: Object.keys(result.data.data).length, checkedAt: new Date().toISOString() };
+    const servers = Array.isArray(result.data) ? result.data : result.data.data;
+    return { ok: true, action: 'get_servers', serverCount: Object.keys(servers).length, checkedAt: new Date().toISOString() };
   } catch {
     // O upstream pode incluir API Key/URL no erro. Retorna apenas uma mensagem própria.
     throw new AppError(502, 'XUI_ADMIN_CONNECTION', 'Não foi possível validar a Admin API do XUI ONE. Verifique URL/porta, Access Code do tipo Admin API, API Key, permissões e liberação do IP deste servidor no XUI.');

@@ -69,6 +69,8 @@ Antes de cadastrar uma origem, inclua seu **host e porta exatos** em `XUI_ALLOWE
 
 O teste administrativo faz `GET /ACCESS_CODE/?api_key=API_KEY&action=get_servers` no backend. Access Code e API Key são cifrados separadamente no banco; a listagem informa apenas se estão configurados. Credenciais não são devolvidas ao navegador nem incluídas em auditoria/erros. A coluna cifrada legada foi preservada para compatibilidade de migrations; credenciais antigas precisam ser classificadas antes de migrar para os novos campos. A autenticação das linhas continua na Player API com usuário/senha.
 
+O retorno de `get_servers` pode ser uma lista JSON direta de servidores, com IDs string, ou um envelope `STATUS_SUCCESS/data`. O cliente valida ambos os formatos e devolve somente a contagem de servidores. Listas de erro e respostas de autenticação recusada continuam sendo rejeitadas.
+
 Uma whitelist vazia permite qualquer IP que possua uma chave válida. A chave bootstrap ignora a whitelist para recuperação administrativa e deve permanecer sob controle do operador. Eventos de escrita concluídos são persistidos em `audit_logs` sem corpos, senhas ou tokens. O banco deve estar saudável para concluir a auditoria da resposta. Operações de configuração e a auditoria HTTP são gravações separadas; em falha de auditoria, o cliente recebe erro e deve consultar o estado antes de repetir uma escrita.
 
 ## 4. Protocolo P2P

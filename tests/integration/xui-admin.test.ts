@@ -10,7 +10,7 @@ if (process.env.NODE_ENV !== 'test' || !process.env.DATABASE_URL) throw new Erro
 const source = Fastify();
 const accessCode = 'control-code';
 const apiKey = 'xui-key+with/slash?and&symbols=encoded';
-let mode: 'success' | 'failure' | 'html' | 'large' | 'redirect' = 'success';
+let mode: 'success' | 'raw-list' | 'error-list' | 'failure' | 'html' | 'large' | 'redirect' = 'success';
 let redirected = 0;
 let lastAdmin: { action?: string; api_key?: string; authorization?: string } = {};
 let playerCalls = 0;
@@ -20,6 +20,8 @@ source.get<{ Querystring: { action?: string; api_key?: string } }>('/control-cod
   if (mode === 'html') return reply.type('text/html').send('<h1>Not Admin API</h1>');
   if (mode === 'large') return reply.send({ status: 'STATUS_SUCCESS', data: ['x'.repeat(1024 * 1024)] });
   if (mode === 'failure' || request.query.api_key !== apiKey || request.query.action !== 'get_servers') return reply.send({ status: 'STATUS_FAILURE', error: `Invalid API key ${request.query.api_key}` });
+  if (mode === 'raw-list') return [{ id: '1', server_name: 'Fixture', private_data: apiKey }];
+  if (mode === 'error-list') return [{ id: '1', error: `Invalid API key ${request.query.api_key}` }];
   return reply.type('text/html').send(JSON.stringify({ status: 'STATUS_SUCCESS', data: { '1': { id: 1, server_name: 'Fixture', secret_not_for_client: apiKey } } }));
 });
 source.get('/redirect-target', () => { redirected++; return { status: 'STATUS_SUCCESS', data: [] }; });
@@ -75,6 +77,14 @@ describe('credenciais e Admin API XUI ONE', () => {
   it('mantém as credenciais ao editar somente os dados públicos', async () => {
     expect((await app.inject({ method: 'PUT', url: `/api/admin/xui-servers/${serverId}`, headers, payload: { name: 'Renamed', baseUrl } })).statusCode).toBe(200);
     expect((await check()).statusCode).toBe(200);
+  });
+  it('aceita a lista direta com IDs string retornada pela origem real', async () => {
+    mode = 'raw-list';
+    try { const result = await check(); expect(result.statusCode).toBe(200); expect(result.json()).toMatchObject({ ok: true, serverCount: 1 }); expect(result.body).not.toContain(apiKey); expect(result.body).not.toContain('private_data'); } finally { mode = 'success'; }
+  });
+  it('rejeita listas de erro sem confundir com servidores autenticados', async () => {
+    mode = 'error-list';
+    try { const result = await check(); expect(result.statusCode).toBe(502); expect(result.body).not.toContain(apiKey); expect(result.body).not.toContain('Invalid API key'); } finally { mode = 'success'; }
   });
   it('rejeita código com path traversal e o campo antigo apiToken', async () => {
     for (const input of [{ ...saved(), adminAccessCode: '../control-code' }, { ...saved(), apiToken: 'old-bearer' }]) expect((await app.inject({ method: 'PUT', url: `/api/admin/xui-servers/${serverId}`, headers, payload: input })).statusCode).toBe(400);
