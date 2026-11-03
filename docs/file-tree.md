@@ -15,14 +15,23 @@ highpass-p2p-engine/
 │   │   │   │   │   │   └── com/
 │   │   │   │   │   │       └── highpass/
 │   │   │   │   │   │           └── player/
+│   │   │   │   │   │               ├── AppUpdates.kt
+│   │   │   │   │   │               ├── ArtworkLoader.kt
+│   │   │   │   │   │               ├── CatalogAdapter.kt
+│   │   │   │   │   │               ├── DetailsActivity.kt
 │   │   │   │   │   │               ├── EngineApi.kt
 │   │   │   │   │   │               ├── HomeActivity.kt
+│   │   │   │   │   │               ├── LibraryStore.kt
 │   │   │   │   │   │               ├── LoginActivity.kt
 │   │   │   │   │   │               ├── P2PBridge.kt
 │   │   │   │   │   │               ├── P2PDataSource.kt
 │   │   │   │   │   │               ├── PlayerActivity.kt
+│   │   │   │   │   │               ├── PlayerTheme.kt
 │   │   │   │   │   │               ├── SegmentBuffer.kt
-│   │   │   │   │   │               └── SessionStore.kt
+│   │   │   │   │   │               ├── SessionStore.kt
+│   │   │   │   │   │               ├── UpdateActivity.kt
+│   │   │   │   │   │               ├── UpdateFileProvider.kt
+│   │   │   │   │   │               └── UpdatePolicy.kt
 │   │   │   │   │   ├── res/
 │   │   │   │   │   │   ├── drawable/
 │   │   │   │   │   │   │   ├── ic_highpass.xml
@@ -32,19 +41,22 @@ highpass-p2p-engine/
 │   │   │   │   │   │   ├── values/
 │   │   │   │   │   │   │   └── styles.xml
 │   │   │   │   │   │   └── xml/
-│   │   │   │   │   │       └── network_security_config.xml
+│   │   │   │   │   │       ├── network_security_config.xml
+│   │   │   │   │   │       └── update_paths.xml
 │   │   │   │   │   └── AndroidManifest.xml
 │   │   │   │   └── test/
 │   │   │   │       └── java/
 │   │   │   │           └── com/
 │   │   │   │               └── highpass/
 │   │   │   │                   └── player/
-│   │   │   │                       └── SegmentBufferTest.kt
+│   │   │   │                       ├── SegmentBufferTest.kt
+│   │   │   │                       └── UpdatePolicyTest.kt
 │   │   │   └── build.gradle.kts
 │   │   ├── gradle/
 │   │   │   └── wrapper/
 │   │   │       ├── gradle-wrapper.jar
 │   │   │       └── gradle-wrapper.properties
+│   │   ├── README.md
 │   │   ├── build.gradle.kts
 │   │   ├── gradle.properties
 │   │   ├── gradlew
@@ -54,6 +66,8 @@ highpass-p2p-engine/
 │   │   ├── components/
 │   │   │   ├── ApiTask.brs
 │   │   │   ├── ApiTask.xml
+│   │   │   ├── HighpassCard.brs
+│   │   │   ├── HighpassCard.xml
 │   │   │   ├── HighpassScene.brs
 │   │   │   └── HighpassScene.xml
 │   │   ├── images/
@@ -77,6 +91,7 @@ highpass-p2p-engine/
 │   └── webplayer/
 │       ├── src/
 │       │   ├── components/
+│       │   │   ├── ClientUpdates.tsx
 │       │   │   └── P2PVideoPlayer.tsx
 │       │   ├── p2p/
 │       │   │   ├── android-bridge.ts
@@ -104,6 +119,7 @@ highpass-p2p-engine/
 │   │   └── webplayer-mobile.png
 │   ├── admin-preview.png
 │   ├── backend-boilerplate.md
+│   ├── client-release-1.1.md
 │   ├── ecosystem.md
 │   ├── file-tree.md
 │   ├── p2p-observability.md
@@ -150,8 +166,10 @@ highpass-p2p-engine/
 │   ├── deploy.sh
 │   ├── highpass-switch
 │   ├── observability.sh
+│   ├── package-android-release.py
 │   ├── package-tizen.py
 │   ├── patch-p2p.mjs
+│   ├── publish-clients.py
 │   ├── setup-monitoring-host.sh
 │   └── setup-turn.sh
 ├── src/
@@ -221,6 +239,7 @@ highpass-p2p-engine/
 │   └── server.ts
 ├── tests/
 │   ├── e2e/
+│   │   ├── android-fixture.ts
 │   │   ├── container-seed.ts
 │   │   ├── iptv-browser.ts
 │   │   ├── native-vod-seek.ts
@@ -231,17 +250,22 @@ highpass-p2p-engine/
 │   ├── integration/
 │   │   ├── admin-login.test.ts
 │   │   ├── api.test.ts
+│   │   ├── artwork.test.ts
 │   │   ├── hls-signatures.test.ts
 │   │   ├── iptv.test.ts
 │   │   ├── p2p.test.ts
 │   │   ├── telemetry.test.ts
 │   │   ├── xui-admin.test.ts
 │   │   └── xui-transport.test.ts
+│   ├── scripts/
+│   │   └── test_publish_clients.py
 │   └── unit/
 │       ├── control-plane.test.ts
 │       ├── delivery-policy.test.ts
 │       ├── resources.test.ts
 │       ├── security.test.ts
+│       ├── seed-lifecycle.test.ts
+│       ├── telemetry-id.test.ts
 │       ├── traffic.test.ts
 │       └── xui-transport.test.ts
 ├── .dockerignore
@@ -263,3 +287,5 @@ highpass-p2p-engine/
 ├── tsconfig.json
 └── vitest.config.ts
 ```
+
+Builds, credenciais, node_modules, APKs e pacotes TV são artefatos ignorados pelo Git. As migrations SQL geradas ficam em drizzle/.

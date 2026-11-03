@@ -25,7 +25,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       let cancelled = false;
       const timer = setInterval(() => { if (playback.statsPath) void fetch(absoluteUrl(playback.statsPath), { credentials: 'same-origin' }).then(async (response) => {
         if (!response.ok) return; const value = await response.json() as Partial<typeof initialStats>;
-        if (!cancelled) { const httpDownloaded = Math.max(value.httpDownloaded ?? 0, carried.httpDownloaded); const split = trafficPercentages(httpDownloaded, carried.p2pDownloaded); carried = { ...carried, peers: 0, httpDownloaded, ...split, saving: split.p2pPercentage, downloadRate: 0, uploadRate: 0 }; setStats({ ...carried }); }
+        if (!cancelled) { const httpDownloaded = Math.max(value.httpDownloaded ?? 0, carried.httpDownloaded); const split = trafficPercentages(httpDownloaded, carried.p2pDownloaded); carried = { ...carried, deliveryMode: httpDownloaded > 0 ? 'http' : 'connecting', peers: 0, httpDownloaded, ...split, saving: split.p2pPercentage, downloadRate: 0, uploadRate: 0 }; setStats({ ...carried }); }
       }).catch(() => undefined); }, 1000);
       snapshot = () => ({ ...carried }); return () => { cancelled = true; clearInterval(timer); };
     };
@@ -33,14 +33,13 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       if (closed) return;
       fileMode = false; recoverFile = false; setError(''); setNative(!p2pEnabled); policy?.reset(); destroyStats();
       const HlsWithP2P = HlsJsP2PEngine.injectMixin(Hls);
-      const instance = new HlsWithP2P({ enableWorker: true, startPosition: position, maxBufferLength: playback.config?.bufferSeconds ?? 20, backBufferLength: 15, p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: 1200, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
-      let lastFragmentStart = Math.max(0, position);
-      hls = instance; updateHttp = (allowed) => { instance.p2pEngine.applyDynamicConfig({ core: { simultaneousHttpDownloads: allowed ? 1 : 0 } }); if (allowed) queueMicrotask(() => { if (!closed && hls === instance) instance.startLoad(lastFragmentStart, true); }); };
+      const instance = new HlsWithP2P({ enableWorker: true, startPosition: position, maxBufferLength: playback.config?.bufferSeconds ?? 20, backBufferLength: 15, p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
+      hls = instance; updateHttp = (allowed) => { instance.p2pEngine.applyDynamicConfig({ core: { simultaneousHttpDownloads: allowed ? 1 : 0 } });  };
       const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') policy?.recovered(segment.url); };
       instance.p2pEngine.addEventListener('onSegmentLoaded', downloaded);
       if (p2pEnabled) { const tracker = trackStats(instance.p2pEngine, setStats, carried); snapshot = tracker.snapshot; destroyStats = () => { tracker.destroy(); instance.p2pEngine.removeEventListener('onSegmentLoaded', downloaded); }; }
       else destroyStats = serverStats();
-      instance.on(Hls.Events.FRAG_LOADING, (_event, data) => { if (data.frag.url) { lastFragmentStart = data.frag.start; policy?.begin(data.frag.url, data.frag.start); } });
+      instance.on(Hls.Events.FRAG_LOADING, (_event, data) => { if (data.frag.url) { policy?.begin(data.frag.url, data.frag.start); } });
       instance.on(Hls.Events.FRAG_LOADED, (_event, data) => { if (data.frag.url) policy?.finish(data.frag.url); });
       instance.on(Hls.Events.MEDIA_ATTACHED, () => instance.loadSource(absoluteUrl(playback.url)));
       instance.on(Hls.Events.MANIFEST_PARSED, () => { void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); });
@@ -76,7 +75,9 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     <video ref={video} controls autoPlay playsInline onError={() => setError('Formato ou origem indisponível neste dispositivo.')} />
     <div className="video-top"><span className="live-pill">{playback.isLive ? '● AO VIVO' : 'SOB DEMANDA'}</span><span>{title}</span></div>
     {error && <div className="player-message" role="status">{error}</div>}
-    <div className="traffic-badge" aria-label="Distribuição do tráfego"><strong>{stats.totalDownloaded > 0 ? 'TRÁFEGO DE VÍDEO' : 'AGUARDANDO DADOS'}</strong><span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers · {formatBytes(stats.totalDownloaded)}</span></div>
-    <div className="p2p-strip"><span className={stats.peers ? 'p2p-active' : ''}>● {active ? contingency ? 'HTTP de contingência · tentando P2P' : stats.peers ? 'P2P conectado' : 'P2P buscando seed' : 'Reprodução HTTP'}</span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>{stats.saving.toFixed(1)}% de economia</span>{active && <span className="total-data">HTTP {formatBytes(stats.httpDownloaded)} · P2P {formatBytes(stats.p2pDownloaded)}</span>}</div>
+    <div className="traffic-overlay" aria-label="Distribuição do tráfego" data-mode={stats.deliveryMode}>
+      <span className={stats.deliveryMode === 'p2p' ? 'p2p-active' : ''}>● {active ? stats.deliveryMode === 'p2p' ? 'P2P ativo' : stats.deliveryMode === 'http' ? 'HTTP de contingência · buscando P2P' : contingency ? 'Conectando · HTTP disponível' : 'Conectando ao P2P' : 'HTTP'}</span>
+      <span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>{formatBytes(stats.totalDownloaded)}</span>
+    </div>
   </section>;
 }

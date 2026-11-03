@@ -37,8 +37,11 @@ try {
   await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).waitFor();
   const segments: { url: string; bytes: Buffer }[] = [];
   page.on('response', (response) => { if ((response.headers()['content-type'] ?? '').includes('video/mp2t')) void response.body().catch(async () => (await context.request.get(response.url())).body()).then((bytes) => segments.push({ url: response.url(), bytes })).catch(() => undefined); });
+  const firstFrameStarted = Date.now();
   await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   await page.waitForFunction(() => { const video = document.querySelector('video'); return video !== null && video.readyState >= 2 && video.currentTime > 0; }, { timeout: 30000 });
+  assert.ok(Date.now() - firstFrameStarted < 12000, 'Primeiro frame sem espera cumulativa de bridges/reinicializações');
+  console.log(`Primeiro frame HTTP/P2P em ${Date.now() - firstFrameStarted} ms`);
   for (let attempt = 0; attempt < 50 && !segments.length; attempt++) await page.waitForTimeout(100);
   assert.ok(segments.length > 0, 'Vídeo deve ter recebido segmentos HTTP reais');
 
@@ -84,10 +87,25 @@ try {
   await page.getByRole('button', { name: '◉ Canais ao vivo', exact: true }).click();
   await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   await page.waitForFunction(() => (document.querySelector('video')?.readyState ?? 0) >= 2);
+  assert.ok(await page.locator('.traffic-overlay').evaluate((bar) => {
+    const style = getComputedStyle(bar); const lines = [...bar.children].map((child) => child.getBoundingClientRect().top);
+    const shell = bar.closest('.video-shell')?.getBoundingClientRect();
+    return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.whiteSpace === 'nowrap' && Math.max(...lines) - Math.min(...lines) < 2 && Boolean(shell && bar.getBoundingClientRect().top < shell.top + 65);
+  }), 'Tráfego em linha única transparente no topo do vídeo');
   await page.screenshot({ path: 'docs/previews/webplayer-live.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: 'docs/previews/webplayer-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: '⚙ Configurações', exact: true }).click();
+  await page.getByText('Sua interface está atualizada.', { exact: true }).waitFor();
+  await page.route('**/player/version.json', (route) => route.fulfill({ json: { version: '9.0.0-test', build: 'new-test-build' } }));
+  await page.getByRole('button', { name: 'Verificar atualizações', exact: true }).click();
+  await page.getByText('Uma nova atualização está disponível.', { exact: true }).waitFor();
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Atualizar interface agora', exact: true }).click();
+  await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).waitFor();
+  await page.getByRole('button', { name: '♡ Favoritos', exact: true }).click();
+  await page.getByRole('heading', { name: 'Highpass Teste Ao Vivo' }).first().waitFor();
   await page.getByRole('button', { name: '◌ Minha conta', exact: true }).click(); await page.getByRole('button', { name: 'Encerrar sessão' }).click();
   await page.getByLabel('Usuário', { exact: true }).waitFor();
   assert.deepEqual(pageErrors, []);

@@ -4,11 +4,15 @@ end sub
 sub fetch()
     req = m.top.request
     transfer = CreateObject("roUrlTransfer")
-    transfer.SetUrl("https://p2p.remoto.api.br/api/iptv/" + req.path)
+    if req.publicManifest = true
+        transfer.SetUrl("https://p2p.remoto.api.br/downloads/clients.json")
+    else
+        transfer.SetUrl("https://p2p.remoto.api.br/api/iptv/" + req.path)
+    end if
     transfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
     transfer.InitClientCertificates()
     transfer.AddHeader("Content-Type", "application/json")
-    if req.token <> invalid and req.token <> "" then transfer.AddHeader("Authorization", "Bearer " + req.token)
+    if req.publicManifest <> true and req.token <> invalid and req.token <> "" then transfer.AddHeader("Authorization", "Bearer " + req.token)
     port = CreateObject("roMessagePort")
     transfer.SetMessagePort(port)
     if req.body <> invalid

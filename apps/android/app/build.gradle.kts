@@ -7,15 +7,26 @@ android {
         applicationId = "com.highpass.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = providers.gradleProperty("clientVersionCode").getOrElse("2").toInt()
+        versionName = providers.gradleProperty("clientVersionName").getOrElse("1.1.0")
         buildConfigField("String", "ENGINE_URL", "\"${providers.gradleProperty("engineUrl").getOrElse("https://p2p.remoto.api.br").trimEnd('/')}\"")
         buildConfigField("String", "XUI_BASE_URL", "\"http://xuione.remoto.api.br\"")
     }
     buildFeatures { buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
-    buildTypes { release { isMinifyEnabled = false } }
+    signingConfigs {
+        create("installedIdentity") {
+            val signingPath = System.getenv("ANDROID_SIGNING_STORE_FILE") ?: System.getProperty("user.home") + "/.android/debug.keystore"
+            if (file(signingPath).exists()) {
+                storeFile = file(signingPath)
+                storePassword = System.getenv("ANDROID_SIGNING_STORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("ANDROID_SIGNING_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("ANDROID_SIGNING_KEY_PASSWORD") ?: "android"
+            }
+        }
+    }
+    buildTypes { release { isMinifyEnabled = false; if (signingConfigs.getByName("installedIdentity").storeFile != null) signingConfig = signingConfigs.getByName("installedIdentity"); isDebuggable = false } }
 }
 
 dependencies {

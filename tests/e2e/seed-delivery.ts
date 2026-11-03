@@ -100,10 +100,12 @@ try {
   assert.ok(warm.delivery); await web.request.post(address + warm.delivery.seedPath, { data: { position: 0 } }); await ready(warm.swarmId);
   const screen = await web.newPage(); const pageErrors: string[] = []; screen.on('pageerror', (error) => pageErrors.push(error.message));
   await screen.goto(address + '/player/'); await screen.getByRole('button', { name: '▣ Filmes', exact: true }).click();
-  await blockMedia(screen); await screen.getByRole('button', { name: /Filme de Teste.*Filme/ }).click();
+  await blockMedia(screen); const firstFrameStarted = Date.now(); await screen.getByRole('button', { name: /Filme de Teste.*Filme/ }).click();
   await screen.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 0, undefined, { timeout: 30000 });
   await screen.waitForFunction(() => Number(document.querySelector('[data-testid="p2p-percentage"]')?.textContent?.replace('%', '')) > 99);
   assert.equal(Number(await screen.getByTestId('http-percentage').textContent().then((text) => text?.replace('%', ''))), 0);
+  await screen.locator('.traffic-overlay[data-mode="p2p"]').waitFor();
+  console.log(`Primeiro frame de seed P2P aquecido em ${Date.now() - firstFrameStarted} ms; sem reiniciar HLS para alternar transporte`);
   console.log('WebPlayer HTML5 aprovado com único espectador: vídeo decodificado e 100% dos segmentos por P2P, HTTP bloqueado');
   await app.inject({ method: 'POST', url: `/api/admin/seeds/${warm.swarmId}/restart`, headers: admin }); await screen.unroute('**/api/iptv/**');
   await screen.locator('video').evaluate((video) => { (video as HTMLVideoElement).currentTime = 200; });

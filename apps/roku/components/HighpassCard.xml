@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component name="HighpassCard" extends="Group">
+<interface>
+  <field id="width" type="float" onChange="layout"/>
+  <field id="height" type="float" onChange="layout"/>
+  <field id="itemContent" type="node" onChange="onContent"/>
+  <field id="focusPercent" type="float" onChange="onFocus"/>
+  <field id="gridHasFocus" type="boolean" onChange="onFocus"/>
+</interface>
+<script type="text/brightscript" uri="HighpassCard.brs"/>
+<children>
+  <Rectangle id="focus" color="0x68DFB0FF" opacity="0"/>
+  <Rectangle id="background" translation="[3,3]" color="0x121F2FFF"/>
+  <Rectangle id="well" color="0x1B3042FF"/>
+  <Label id="initial" text="H" color="0x68DFB0FF" horizAlign="center" vertAlign="center" font="font:LargeBoldSystemFont"/>
+  <Poster id="poster" loadWidth="300" loadHeight="400" loadDisplayMode="scaleToFit"/>
+  <Label id="title" color="0xEAF1F8FF" font="font:SmallBoldSystemFont" maxLines="2" wrap="true"/>
+  <Label id="subtitle" color="0x91A7BEFF" font="font:SmallSystemFont"/>
+</children>
+</component>

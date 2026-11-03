@@ -1,8 +1,17 @@
 import { absoluteUrl, type Playback } from '../api.js';
 import type { P2PStats } from './stats.js';
 
+export function telemetryId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  // WebView permits getRandomValues on emulator loopback HTTP builds too.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 15) | 64; bytes[8] = ((bytes[8] ?? 0) & 63) | 128;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export class PlaybackReporter {
-  private readonly clientId = crypto.randomUUID();
+  private readonly clientId = telemetryId();
   private readonly timer: ReturnType<typeof setInterval>;
   private previous = { httpDownloaded: 0, p2pDownloaded: 0 };
   private error: string | undefined;

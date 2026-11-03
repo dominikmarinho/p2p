@@ -32,7 +32,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     if (!allowed) throw new AppError(403, 'ORIGIN_DENIED', 'Origem não permitida');
     done();
   });
-  router.addHook('onSend', async (_request, reply, payload) => { reply.header('Cache-Control', 'no-store'); return payload; });
+  router.addHook('onSend', async (_request, reply, payload) => { if (!reply.hasHeader('Cache-Control')) reply.header('Cache-Control', 'no-store'); return payload; });
   seeds.routes(app);
   router.post('/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } }, schema: { body: lineCredentialsDto } }, async (request, reply) => {
     const result = await service.login(request.body);
@@ -46,6 +46,20 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     reply.header('Set-Cookie', `HP_SESSION=; HttpOnly; SameSite=Strict; Path=/api/iptv; Max-Age=0${service.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
     return reply.code(204).send();
   });
+  router.get('/artwork/:kind/:id', { config: { rateLimit: { max: 240, timeWindow: '1 minute', keyGenerator: (request) => `artwork:${digest(clientToken(request))}` } }, schema: { params: z.object({ kind: contentKindDto, id: z.string().regex(/^\d+$/) }) } }, async (request, reply) => {
+    const session = await service.session(clientToken(request));
+    const item = (await service.catalog(session, request.params.kind)).find((entry) => entry.id === request.params.id);
+    if (!item?.image) throw new AppError(404, 'ARTWORK_NOT_FOUND', 'Capa indisponível');
+    const upstream = new URL(item.image, service.origin()); service.checkUpstream(upstream);
+    const response = await service.fetch(upstream, { signal: AbortSignal.timeout(5000) });
+    const mime = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+    if (!response.ok || !['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'].includes(mime)) { await response.body?.cancel(); throw new AppError(502, 'ARTWORK_FORMAT', 'Capa incompatível'); }
+    const reader = response.body?.getReader(); if (!reader) throw new AppError(502, 'ARTWORK_EMPTY', 'Capa indisponível');
+    const parts: Buffer[] = []; let size = 0;
+    try { while (true) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength; if (size > 2 * 1024 * 1024) throw new AppError(502, 'ARTWORK_SIZE', 'Capa acima do limite'); parts.push(Buffer.from(next.value)); } }
+    finally { await reader.cancel().catch(() => undefined); }
+    return reply.header('Cache-Control', 'private, max-age=300').type(mime).send(Buffer.concat(parts));
+  });
   router.get('/catalog', { schema: { querystring: z.object({ kind: contentKindDto, category: z.string().max(64).optional(), search: z.string().max(100).optional(), offset: z.coerce.number().int().min(0).max(30000).default(0), limit: z.coerce.number().int().min(1).max(200).default(100) }) } }, async (request) => {
     const session = await service.session(clientToken(request)); const query = request.query;
     let items = await service.catalog(session, query.kind);
@@ -56,7 +70,14 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
   router.get('/categories', { schema: { querystring: z.object({ kind: contentKindDto }) } }, async (request) => service.categories(await service.session(clientToken(request)), request.query.kind));
   router.get('/series/:id', { schema: { params: z.object({ id: z.string().regex(/^\d+$/) }) } }, async (request) => service.episodes(await service.session(clientToken(request)), request.params.id));
   router.get('/epg/:id', { schema: { params: z.object({ id: z.string().regex(/^\d+$/) }) } }, async (request) => service.epg(await service.session(clientToken(request)), request.params.id));
-  router.post('/playback', { schema: { body: z.object({ kind: z.enum(['live', 'movie', 'episode']), id: z.string().regex(/^\d+$/), seriesId: z.string().regex(/^\d+$/).optional(), client: z.enum(['web', 'android', 'roku']).optional() }).strict() } }, async (request) => service.playback(clientToken(request), request.body.kind, request.body.id, request.body.seriesId, request.body.client === 'roku'));
+  router.post('/playback', { schema: { body: z.object({ kind: z.enum(['live', 'movie', 'episode']), id: z.string().regex(/^\d+$/), seriesId: z.string().regex(/^\d+$/).optional(), client: z.enum(['web', 'android', 'roku']).optional() }).strict() } }, async (request) => {
+    const token = clientToken(request); const playback = await service.playback(token, request.body.kind, request.body.id, request.body.seriesId, request.body.client === 'roku');
+    if (playback.delivery) {
+      const id = playback.delivery.seedPath.split('/').at(-1);
+      if (id) void seeds.prepare(app, token, id).catch(() => undefined);
+    }
+    return playback;
+  });
 
   router.get<{ Params: { grant: string } }>('/traffic/:grant', async (request) => {
     const permission = await service.grant(request.params.grant);

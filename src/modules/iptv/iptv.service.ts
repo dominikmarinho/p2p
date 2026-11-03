@@ -40,7 +40,7 @@ export class IptvService {
     if (!allowed.has(url.host) || !['http:', 'https:'].includes(url.protocol) || (url.protocol === 'http:' && !this.env.XUI_ALLOW_HTTP) || url.username || url.password) throw new AppError(502, 'XUI_HOST', 'Host ou protocolo de origem não autorizado');
   }
   async fetch(url: URL, options: RequestInit = {}): Promise<Response> {
-    const kind = url.pathname.includes('player_api.php') ? 'metadata' : /\.m3u8$/.test(url.pathname) ? 'playlist' : 'media';
+    const kind = url.pathname.includes('player_api.php') ? 'metadata' : /\.m3u8$/.test(url.pathname) ? 'playlist' : /\.(?:png|jpe?g|webp|gif|avif)$/i.test(url.pathname) ? 'artwork' : 'media';
     const start = performance.now(); let result = 'network';
     try {
       for (let hop = 0; hop < 4; hop++) {

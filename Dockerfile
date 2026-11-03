@@ -11,6 +11,8 @@ COPY src ./src
 RUN npm run build:server
 
 FROM dependencies AS web-build
+ARG APP_REVISION=local
+ENV APP_REVISION=$APP_REVISION
 COPY apps/webplayer ./apps/webplayer
 COPY scripts/build-web.mjs scripts/patch-p2p.mjs ./scripts/
 RUN npm run build:web

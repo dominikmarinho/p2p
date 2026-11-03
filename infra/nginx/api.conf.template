@@ -22,6 +22,16 @@ server {
     client_max_body_size 16k;
     access_log /var/log/nginx/highpass.access.log highpass;
     limit_req_status 429;
+    location ^~ /downloads/ {
+        alias /var/www/highpass-downloads/;
+        types { application/json json; application/vnd.android.package-archive apk; application/zip zip wgt; application/octet-stream ipk; }
+        default_type application/octet-stream;
+        autoindex off;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        limit_except GET HEAD { deny all; }
+    }
     location = /grafana { return 308 /grafana/; }
     location = /grafana/login {
         limit_req zone=highpass_auth burst=5 nodelay;

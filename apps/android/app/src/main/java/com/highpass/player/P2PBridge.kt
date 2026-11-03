@@ -13,6 +13,7 @@ import android.webkit.WebViewClient
 import android.webkit.CookieManager
 import org.json.JSONObject
 import java.util.UUID
+import java.net.URL
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -30,13 +31,19 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, req
     private data class Request(val future: CompletableFuture<ByteArray?> = CompletableFuture(), val data: SegmentBuffer = SegmentBuffer())
     private val requests = ConcurrentHashMap<String, Request>()
     @Volatile private var closed = false
+    @Volatile private var initialized = false
     private val httpBytes = AtomicLong()
+    private val directHttpTotal = AtomicLong()
     private val pendingPlaylists = LinkedHashMap<String, String>()
+    private val segmentUris = ConcurrentHashMap.newKeySet<String>()
     private val httpTicker = object : Runnable {
         override fun run() {
             if (closed) return
-            val bytes = if (ready.count == 0L) httpBytes.getAndSet(0) else 0L
-            if (bytes > 0) webView.evaluateJavascript("window.HighpassBridge?.http($bytes)", null)
+            val bytes = httpBytes.getAndSet(0)
+            if (bytes > 0) {
+                if (initialized) webView.evaluateJavascript("window.HighpassBridge?.http($bytes)", null)
+                else { val total = directHttpTotal.addAndGet(bytes); onStats(JSONObject().put("deliveryMode", "http").put("httpDownloaded", total).put("p2pDownloaded", 0).put("totalDownloaded", total).put("p2pPercentage", 0).put("peers", 0).put("downloadRate", 0).put("uploadRate", 0).toString()) }
+            }
             handler.postDelayed(this, 1000)
         }
     }
@@ -57,8 +64,13 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, req
         webView.addJavascriptInterface(object {
             @JavascriptInterface fun ready() { handler.post {
                 if (closed) return@post
-                webView.evaluateJavascript("window.HighpassBridge.init($playback,$enabled)") {
-                    for ((uri, text) in pendingPlaylists) webView.evaluateJavascript("window.HighpassBridge.playlist(${JSONObject.quote(uri)},${JSONObject.quote(text)})", null)
+                webView.evaluateJavascript("(function(){try{window.HighpassBridge.init($playback,$enabled);return true}catch(error){return false}})()") { result ->
+                    initialized = result == "true"
+                    if (initialized) {
+                        val earlyHttp = directHttpTotal.getAndSet(0)
+                        if (earlyHttp > 0) webView.evaluateJavascript("window.HighpassBridge.http($earlyHttp)", null)
+                        for ((uri, text) in pendingPlaylists) webView.evaluateJavascript("window.HighpassBridge.playlist(${JSONObject.quote(uri)},${JSONObject.quote(text)})", null)
+                    }
                     pendingPlaylists.clear(); ready.countDown()
                 }
             } }
@@ -79,8 +91,8 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, req
         handler.postDelayed(httpTicker, 1000)
     }
     fun load(uri: String, position: Long, length: Long): ByteArray? {
-        if (!enabled || closed || Looper.myLooper() == Looper.getMainLooper() || !ready.await(750, TimeUnit.MILLISECONDS) || requests.size >= 4) return null
-        if (closed) return null
+        if (!enabled || closed || !segmentUris.contains(uri) || Looper.myLooper() == Looper.getMainLooper() || !ready.await(750, TimeUnit.MILLISECONDS) || requests.size >= 4) return null
+        if (closed || !initialized) return null
         val id = UUID.randomUUID().toString(); val request = Request(); requests[id] = request
         if (closed) { requests.remove(id); return null }
         return try {
@@ -90,26 +102,34 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, req
     }
     fun playlist(uri: String, text: String) {
         if (closed || text.length > 1024 * 1024) return
-        val done = CountDownLatch(1)
+        var segment = false
+        for (line in text.lineSequence().map { it.trim() }) {
+            if (line.startsWith("#EXTINF:")) segment = true
+            else if (segment && line.isNotEmpty() && !line.startsWith("#")) {
+                runCatching { URL(URL(uri), line).toExternalForm() }.getOrNull()?.let { segmentUris.add(it) }
+                segment = false
+            }
+        }
+        // A native manifest is always HTTP. JS registration and the subsequent load
+        // share the main-thread queue, so the loader need not block on every refresh.
+        if (segmentUris.size > 2000) segmentUris.retainAll(text.lineSequence().filter { it.isNotBlank() && !it.startsWith("#") }.mapNotNull { runCatching { URL(URL(uri), it.trim()).toExternalForm() }.getOrNull() }.toSet())
         handler.post {
-            if (closed) { done.countDown(); return@post }
+            if (closed) return@post
             if (ready.count > 0L) {
                 pendingPlaylists[uri] = text
                 while (pendingPlaylists.size > 8 || pendingPlaylists.values.sumOf { it.length } > 4 * 1024 * 1024) {
                     val victim = pendingPlaylists.entries.firstOrNull { !it.value.contains("#EXT-X-STREAM-INF:") } ?: pendingPlaylists.entries.first()
                     pendingPlaylists.remove(victim.key)
                 }
-                done.countDown()
-            } else webView.evaluateJavascript("window.HighpassBridge.playlist(${JSONObject.quote(uri)},${JSONObject.quote(text)})") { done.countDown() }
+            } else if (initialized) webView.evaluateJavascript("window.HighpassBridge.playlist(${JSONObject.quote(uri)},${JSONObject.quote(text)})", null)
         }
-        done.await(2, TimeUnit.SECONDS)
     }
     fun resume() { if (!closed) handler.post { webView.evaluateJavascript("window.HighpassBridge?.resume?.()", null) } }
     fun playhead(seconds: Double) { if (!closed && seconds.isFinite() && seconds >= 0) handler.post { if (ready.count == 0L) webView.evaluateJavascript("window.HighpassBridge?.playhead?.($seconds)", null) } }
     fun httpOnly() { if (!closed) handler.post { webView.evaluateJavascript("window.HighpassBridge?.httpOnly?.()", null) } }
     fun http(bytes: Int) { if (!closed && bytes > 0) httpBytes.addAndGet(bytes.toLong()) }
     fun close() {
-        closed = true; pendingPlaylists.clear(); ready.countDown(); requests.values.forEach { it.future.complete(null) }; requests.clear()
+        closed = true; pendingPlaylists.clear(); segmentUris.clear(); ready.countDown(); requests.values.forEach { it.future.complete(null) }; requests.clear()
         handler.removeCallbacks(httpTicker)
         webView.evaluateJavascript("window.HighpassBridge?.destroy()", null); webView.removeJavascriptInterface("NativeSegments"); webView.stopLoading(); webView.destroy()
         if (activeGeneration.get() == generation) CookieManager.getInstance().removeSessionCookies(null)

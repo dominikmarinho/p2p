@@ -16,3 +16,6 @@ apps/android/**/build/
 *.apk
 
 artifacts/
+
+__pycache__/
+*.pyc

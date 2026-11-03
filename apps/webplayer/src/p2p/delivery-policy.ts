@@ -13,6 +13,8 @@ export class DeliveryPolicy {
   private lastTouch = 0;
   private httpUntil = 0;
   private allowed = false;
+  private lastP2P = 0;
+  private waitingForSeed = false;
   private change(allowed: boolean) { if (this.allowed !== allowed) { this.allowed = allowed; this.allowHttp(allowed); } }
   constructor(private readonly playback: Playback, private readonly allowHttp: (allowed: boolean) => void) {
     this.allowHttp(false);
@@ -26,7 +28,16 @@ export class DeliveryPolicy {
       return;
     }
     this.touching = true; this.lastTouch = Date.now();
-    try { await fetch(absoluteUrl(this.playback.delivery.seedPath), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: this.position }), signal: AbortSignal.timeout(5000) }); }
+    try {
+      const response = await fetch(absoluteUrl(this.playback.delivery.seedPath), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: this.position }), signal: AbortSignal.timeout(5000) });
+      if (response.ok && typeof response.json === 'function') {
+        const value = await response.json() as { state?: string };
+        // No seed can supply this segment yet. Keep connecting to peers, but do
+        // not impose another full segment deadline before the first frame.
+        if (!this.closed && ['warming', 'unavailable'].includes(value.state ?? '') && Date.now() - this.lastP2P > 10000) { this.waitingForSeed = true; this.fallback(); }
+        else if (!this.closed && value.state === 'ready' && this.waitingForSeed && this.expired.size === 0) { this.waitingForSeed = false; this.httpUntil = 0; if (this.recovery) clearTimeout(this.recovery); this.change(false); }
+      }
+    }
     catch { /* O prazo de cada segmento mantém o fallback disponível. */ }
     finally { this.touching = false; }
   }
@@ -49,7 +60,8 @@ export class DeliveryPolicy {
     if (this.recovery) clearTimeout(this.recovery);
     this.recovery = setTimeout(() => { this.httpUntil = 0; if (!this.closed) this.change(false); }, this.playback.delivery?.recoveryMs ?? 5000);
   }
-  recovered(id?: string) { if (this.closed || (this.expired.size > 0 && !(this.expired.size === 1 && id && this.expired.has(id)))) return; this.httpUntil = 0; if (this.recovery) clearTimeout(this.recovery); this.change(false); }
+  recovered(id?: string) { this.lastP2P = Date.now(); if (this.closed || (this.expired.size > 0 && !(this.expired.size === 1 && id && this.expired.has(id)))) return; this.httpUntil = 0; if (this.recovery) clearTimeout(this.recovery); this.change(false); }
+  retryP2P() { if (this.closed) return; this.httpUntil = 0; if (this.recovery) clearTimeout(this.recovery); this.change(false); }
   destroy() {
     if (this.closed) return;
     this.closed = true; clearInterval(this.heartbeat); if (this.queuedTouch) clearTimeout(this.queuedTouch); if (this.recovery) clearTimeout(this.recovery);

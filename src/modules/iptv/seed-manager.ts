@@ -58,26 +58,34 @@ export class SeedManager {
       this.metrics.seedActive.set(this.entries.size); this.metrics.seedReady.set([...this.entries.values()].filter((seed) => seed.ready).length); this.metrics.seedViewers.set([...this.entries.values()].reduce((sum, seed) => sum + seed.viewers.size, 0));
     } finally { this.running = false; }
   }
+  /** Reserve and start warming as soon as playback is authorized, without delaying its response. */
+  async prepare(app: FastifyInstance, token: string, id: string, position = 0) {
+    const grant = await this.service.grant(id);
+    if (digest(token) !== grant.sessionHash) throw new AppError(401, 'MEDIA_OWNER', 'Sessão inválida');
+    if (!this.service.env.P2P_SEED_ENABLED || this.closed) return { state: 'unavailable', reason: 'disabled' };
+    let seed = this.entries.get(grant.swarmId);
+    if (!seed) {
+      // Expire disconnected viewers before deciding that channel zapping exhausted the seed slots.
+      for (const entry of this.entries.values()) for (const [key, viewer] of entry.viewers) if (Date.now() - viewer.lastSeen > 35000) entry.viewers.delete(key);
+      if (this.entries.size >= this.service.env.P2P_SEED_MAX_STREAMS) {
+        const idle = [...this.entries.values()].filter((entry) => !entry.viewers.size).sort((a, b) => a.idleSince - b.idleSince)[0];
+        if (idle) { this.entries.delete(idle.swarm); await this.relay.stopSeed(idle.key); }
+      }
+      if (this.entries.size >= this.service.env.P2P_SEED_MAX_STREAMS) return { state: 'unavailable', reason: 'capacity' };
+      const address = app.server.address(); if (!address || typeof address === 'string') return { state: 'unavailable', reason: 'not-listening' };
+      seed = { warmPositions: [], revision: 0, key: `seed:${grant.swarmId}`, swarm: grant.swarmId, kind: grant.kind, content: grant.id, owner: id, base: `http://127.0.0.1:${address.port}`, viewers: new Map(), idleSince: 0, retryAt: 0, ready: false, lastSegmentAt: 0, originBytes: 0, uploaded: 0 }; this.entries.set(grant.swarmId, seed);
+    }
+    if (seed.viewers.size < 256 || seed.viewers.has(id)) seed.viewers.set(id, { token, position, lastSeen: Date.now() });
+    void this.tick(); return { state: seed.ready ? 'ready' : 'warming', viewers: seed.viewers.size };
+  }
   routes(app: FastifyInstance) {
     const router = app.withTypeProvider<ZodTypeProvider>();
     const params = z.object({ grant: z.string().regex(/^[a-f0-9]{64}$/) });
     const own = async (token: string, id: string) => { const grant = await this.service.grant(id); if (digest(token) !== grant.sessionHash) throw new AppError(401, 'MEDIA_OWNER', 'Sessão inválida'); return grant; };
     router.post('/seed/:grant', { config: { rateLimit: { max: 120, timeWindow: '1 minute', keyGenerator: (request) => `seed:${(request.params as { grant: string }).grant}:${request.ip}` }, disableMetrics: true }, schema: { params, body: z.object({ position: z.number().finite().min(0).max(864000).default(0) }).strict() } }, async (request) => {
-      const token = clientToken(request); const grant = await own(token, request.params.grant);
-      if (!this.service.env.P2P_SEED_ENABLED || this.closed) return { state: 'unavailable', reason: 'disabled' };
-      let seed = this.entries.get(grant.swarmId);
-      if (!seed) {
-        if (this.entries.size >= this.service.env.P2P_SEED_MAX_STREAMS) {
-          const idle = [...this.entries.values()].find((entry) => !entry.viewers.size);
-          if (idle) { this.entries.delete(idle.swarm); await this.relay.stopSeed(idle.key); }
-        }
-        if (this.entries.size >= this.service.env.P2P_SEED_MAX_STREAMS) return { state: 'unavailable', reason: 'capacity' };
-        const address = app.server.address(); if (!address || typeof address === 'string') return { state: 'unavailable', reason: 'not-listening' };
-        seed = { warmPositions: [], revision: 0, key: `seed:${grant.swarmId}`, swarm: grant.swarmId, kind: grant.kind, content: grant.id, owner: request.params.grant, base: `http://127.0.0.1:${address.port}`, viewers: new Map(), idleSince: 0, retryAt: 0, ready: false, lastSegmentAt: 0, originBytes: 0, uploaded: 0 }; this.entries.set(grant.swarmId, seed);
-      }
-      if (seed.viewers.size < 256 || seed.viewers.has(request.params.grant)) seed.viewers.set(request.params.grant, { token, position: request.body.position, lastSeen: Date.now() });
-      void this.tick(); return { state: seed.ready ? 'ready' : 'warming', viewers: seed.viewers.size };
+      const token = clientToken(request); await own(token, request.params.grant);
+      return this.prepare(app, token, request.params.grant, request.body.position);
     });
-    router.delete('/seed/:grant', { config: { rateLimit: false, disableMetrics: true }, schema: { params } }, async (request, reply) => { const grant = await own(clientToken(request), request.params.grant); this.entries.get(grant.swarmId)?.viewers.delete(request.params.grant); return reply.code(204).send(); });
+    router.delete('/seed/:grant', { config: { rateLimit: false, disableMetrics: true }, schema: { params } }, async (request, reply) => { const grant = await own(clientToken(request), request.params.grant); const seed = this.entries.get(grant.swarmId); seed?.viewers.delete(request.params.grant); if (seed && !seed.viewers.size) { seed.idleSince = Date.now(); seed.ready = false; } return reply.code(204).send(); });
   }
 }

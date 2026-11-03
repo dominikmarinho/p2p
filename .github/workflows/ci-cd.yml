@@ -60,6 +60,7 @@ jobs:
       - name: Configure isolated Redis password
         run: docker exec "${{ job.services.redis.id }}" redis-cli CONFIG SET requirepass "$REDIS_PASSWORD"
       - run: npm test
+      - run: python3 -m unittest discover -s tests/scripts -v
       - run: npm run db:migrate
       - name: Check migration idempotency
         run: npm run db:migrate
@@ -94,7 +95,35 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: 'false'
-      - run: apps/android/gradlew -p apps/android :app:assembleDebug :app:testDebugUnitTest --no-daemon
+      - name: Restore the signing identity of installed Android apps
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_B64"
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/highpass-signing.keystore"
+          echo "ANDROID_SIGNING_STORE_FILE=$RUNNER_TEMP/highpass-signing.keystore" >> "$GITHUB_ENV"
+      - name: Build and test Android with a monotonic distribution version
+        run: |
+          version_code=$((10000 + GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          apps/android/gradlew -p apps/android :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest -PclientVersionCode="$version_code" --no-daemon
+      - name: Package verified Android update
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          EXPECTED_CERT: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          test -n "$EXPECTED_CERT"
+          python3 scripts/package-android-release.py --apk apps/android/app/build/outputs/apk/release/app-release.apk --output client-release --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --expected-cert "$EXPECTED_CERT" --revision "$GITHUB_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          name: highpass-client-release
+          path: client-release
+          retention-days: 30
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/highpass-signing.keystore"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: highpass-android-debug
@@ -124,6 +153,7 @@ jobs:
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
+          build-args: APP_REVISION=${{ github.sha }}
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: |
             ${{ steps.image.outputs.name }}:${{ github.sha }}
@@ -134,6 +164,7 @@ jobs:
           sbom: true
   deploy:
     permissions:
+      actions: read
       contents: read
       packages: read
     needs: [lint-typecheck, tests, build-push]
@@ -145,6 +176,10 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Refuse superseded production revisions before changing the server
+        run: |
+          current=$(git ls-remote origin refs/heads/main | cut -f1)
+          test "$current" = "$GITHUB_SHA" || { echo 'A branch main já possui uma revisão mais recente; publique essa revisão.' >&2; exit 1; }
       - name: Require verified SSH host and credentials
         env:
           DEPLOY_HOST: ${{ secrets.HOST }}
@@ -161,6 +196,27 @@ jobs:
           test -n "$REGISTRY_TOKEN"
           test -n "$HOST_FINGERPRINT"
           case "$HOST_FINGERPRINT" in SHA256:*) ;; *) exit 1 ;; esac
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: highpass-client-release
+          path: client-release
+      - name: Build matching Smart TV packages
+        run: |
+          npm ci
+          npm run build:tv
+          mkdir -p client-release/tv
+          cp artifacts/highpass-roku.zip artifacts/highpass-tizen-unsigned.wgt client-release/tv/
+          cp artifacts/br.api.remoto.highpass_1.1.0_all.ipk client-release/tv/highpass-webos.ipk
+      - name: Transfer client packages through verified SSH
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.PORT }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          source: client-release
+          target: /opt/highpass/client-staging/${{ github.sha }}
       - name: Package exact revision of deployment files
         shell: bash
         run: |
@@ -196,11 +252,14 @@ jobs:
             unset GHCR_TOKEN
             export APP_IMAGE="$IMAGE_NAME:$IMAGE_TAG"
             bash "$release_dir/scripts/deploy.sh"
+            python3 "$release_dir/scripts/publish-clients.py" "/opt/highpass/client-staging/$IMAGE_TAG/client-release"
+            rm -rf "/opt/highpass/client-staging/$IMAGE_TAG"
       - name: Verify public HTTPS and TURN TLS from the runner
         env:
           PUBLIC_BASE: ${{ vars.PUBLIC_ENGINE_URL || 'https://p2p.remoto.api.br' }}
         run: |
           curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 15 "$PUBLIC_BASE/health/ready"
           curl --fail --silent --show-error --max-time 15 "$PUBLIC_BASE/grafana/api/health"
+          curl --fail --silent --show-error --max-time 15 "$PUBLIC_BASE/downloads/android/latest.json"
           domain=$(python3 -c 'import os,urllib.parse; print(urllib.parse.urlparse(os.environ["PUBLIC_BASE"]).hostname)')
           timeout 15 openssl s_client -connect "$domain:5349" -servername "$domain" -verify_hostname "$domain" -verify_return_error -brief </dev/null
