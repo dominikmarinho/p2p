@@ -5,7 +5,7 @@ Executada em 03/11/2026 com Node 22, PG16 e Redis7 isolados do ambiente de produ
 | Verificação | Resultado local |
 | --- | --- |
 | Tipos backend/Web e ESLint | Aprovados |
-| Unitários | 19 testes aprovados, incluindo política P2P, transporte HTTP e percentuais |
+| Unitários | 20 testes aprovados, incluindo política P2P, transporte HTTP e percentuais |
 | Integração | 52 testes aprovados com PostgreSQL/Redis reais, incluindo assinaturas HLS rotativas, propriedade de leases e telemetria |
 | Android | APK debug e 2 testes JVM aprovados |
 | Live Web → ponte Android | Segmento real de 459.848 bytes, receptor HTTP bloqueado, SHA-256 idêntico |

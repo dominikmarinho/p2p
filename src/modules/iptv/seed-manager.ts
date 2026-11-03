@@ -9,7 +9,7 @@ import { digest } from '../../lib/secrets.js';
 import { AppError } from '../../lib/errors.js';
 
 interface Viewer { token: string; lastSeen: number; position: number }
-interface Seed { revision: number; key: string; swarm: string; kind: string; content: string; owner: string; base: string; viewers: Map<string, Viewer>; idleSince: number; retryAt: number; ready: boolean; lastSegmentAt: number; originBytes: number; uploaded: number }
+interface Seed { warmPositions: number[]; revision: number; key: string; swarm: string; kind: string; content: string; owner: string; base: string; viewers: Map<string, Viewer>; idleSince: number; retryAt: number; ready: boolean; lastSegmentAt: number; originBytes: number; uploaded: number }
 export class SeedManager {
   private readonly entries = new Map<string, Seed>();
   private readonly timer: NodeJS.Timeout;
@@ -20,11 +20,11 @@ export class SeedManager {
   }
   async close() { this.closed = true; clearInterval(this.timer); await Promise.allSettled([...this.entries.values()].map((seed) => this.relay.stopSeed(seed.key))); this.entries.clear(); }
   snapshot() {
-    return { enabled: this.service.env.P2P_SEED_ENABLED, active: this.entries.size, ready: [...this.entries.values()].filter((seed) => seed.ready).length, streams: [...this.entries.values()].map((seed) => ({ swarm: seed.swarm, kind: seed.kind, content: seed.content, viewers: seed.viewers.size, ready: seed.ready, lastSegmentAt: seed.lastSegmentAt, originBytes: seed.originBytes, p2pUploaded: seed.uploaded })) };
+    return { enabled: this.service.env.P2P_SEED_ENABLED, active: this.entries.size, ready: [...this.entries.values()].filter((seed) => seed.ready).length, streams: [...this.entries.values()].map((seed) => ({ swarm: seed.swarm, kind: seed.kind, content: seed.content, viewers: seed.viewers.size, ready: seed.ready, warmPositions: seed.warmPositions, lastSegmentAt: seed.lastSegmentAt, originBytes: seed.originBytes, p2pUploaded: seed.uploaded })) };
   }
   async restart(swarm: string, delay = 5000) {
     const seed = this.entries.get(swarm); if (!seed) throw new AppError(404, 'SEED_NOT_FOUND', 'Seed não encontrado');
-    seed.revision++; seed.retryAt = Date.now() + delay; seed.ready = false; seed.originBytes = 0; seed.uploaded = 0;
+    seed.revision++; seed.retryAt = Date.now() + delay; seed.ready = false; seed.warmPositions = []; seed.originBytes = 0; seed.uploaded = 0;
     await this.relay.stopSeed(seed.key);
     return { ok: true };
   }
@@ -48,7 +48,7 @@ export class SeedManager {
         catch { seed.viewers.delete(seed.owner); seed.ready = false; await this.relay.stopSeed(seed.key); return; }
         if (!await this.relay.startSeed(seed.key, seed.owner, owner.token, seed.base)) { seed.ready = false; seed.retryAt = Date.now() + 5000; return; }
         const positions = [...seed.viewers.values()].sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 32).map((viewer) => viewer.position);
-        const status = await this.relay.seedStatus(seed.key, positions); if (revision !== seed.revision || this.entries.get(seed.swarm) !== seed) return; seed.ready = Boolean(status?.ready); seed.lastSegmentAt = status?.lastSegmentAt ?? 0;
+        const status = await this.relay.seedStatus(seed.key, positions); if (revision !== seed.revision || this.entries.get(seed.swarm) !== seed) return; seed.ready = Boolean(status?.ready); seed.lastSegmentAt = status?.lastSegmentAt ?? 0; seed.warmPositions = status?.positions ?? [];
         const traffic = this.relay.stats(seed.key);
         if (traffic) {
           this.metrics.seedOrigin.inc(Math.max(0, traffic.httpDownloaded - seed.originBytes)); this.metrics.seedUpload.inc(Math.max(0, traffic.p2pUploaded - seed.uploaded));
@@ -73,7 +73,7 @@ export class SeedManager {
         }
         if (this.entries.size >= this.service.env.P2P_SEED_MAX_STREAMS) return { state: 'unavailable', reason: 'capacity' };
         const address = app.server.address(); if (!address || typeof address === 'string') return { state: 'unavailable', reason: 'not-listening' };
-        seed = { revision: 0, key: `seed:${grant.swarmId}`, swarm: grant.swarmId, kind: grant.kind, content: grant.id, owner: request.params.grant, base: `http://127.0.0.1:${address.port}`, viewers: new Map(), idleSince: 0, retryAt: 0, ready: false, lastSegmentAt: 0, originBytes: 0, uploaded: 0 }; this.entries.set(grant.swarmId, seed);
+        seed = { warmPositions: [], revision: 0, key: `seed:${grant.swarmId}`, swarm: grant.swarmId, kind: grant.kind, content: grant.id, owner: request.params.grant, base: `http://127.0.0.1:${address.port}`, viewers: new Map(), idleSince: 0, retryAt: 0, ready: false, lastSegmentAt: 0, originBytes: 0, uploaded: 0 }; this.entries.set(grant.swarmId, seed);
       }
       if (seed.viewers.size < 256 || seed.viewers.has(request.params.grant)) seed.viewers.set(request.params.grant, { token, position: request.body.position, lastSeen: Date.now() });
       void this.tick(); return { state: seed.ready ? 'ready' : 'warming', viewers: seed.viewers.size };

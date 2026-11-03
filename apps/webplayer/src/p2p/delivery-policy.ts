@@ -9,6 +9,7 @@ export class DeliveryPolicy {
   private position = 0;
   private closed = false;
   private touching = false;
+  private queuedTouch: ReturnType<typeof setTimeout> | undefined;
   private lastTouch = 0;
   private httpUntil = 0;
   private allowed = false;
@@ -19,7 +20,11 @@ export class DeliveryPolicy {
     this.heartbeat = setInterval(() => { void this.touch(); }, 5000);
   }
   private async touch() {
-    if (this.closed || this.touching || !this.playback.delivery || Date.now() - this.lastTouch < 800) return;
+    if (this.closed || !this.playback.delivery) return;
+    if (this.touching || Date.now() - this.lastTouch < 800) {
+      if (!this.queuedTouch) this.queuedTouch = setTimeout(() => { this.queuedTouch = undefined; void this.touch(); }, Math.max(50, 800 - (Date.now() - this.lastTouch)));
+      return;
+    }
     this.touching = true; this.lastTouch = Date.now();
     try { await fetch(absoluteUrl(this.playback.delivery.seedPath), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: this.position }), signal: AbortSignal.timeout(5000) }); }
     catch { /* O prazo de cada segmento mantém o fallback disponível. */ }
@@ -47,7 +52,7 @@ export class DeliveryPolicy {
   recovered(id?: string) { if (this.closed || (this.expired.size > 0 && !(this.expired.size === 1 && id && this.expired.has(id)))) return; this.httpUntil = 0; if (this.recovery) clearTimeout(this.recovery); this.change(false); }
   destroy() {
     if (this.closed) return;
-    this.closed = true; clearInterval(this.heartbeat); if (this.recovery) clearTimeout(this.recovery);
+    this.closed = true; clearInterval(this.heartbeat); if (this.queuedTouch) clearTimeout(this.queuedTouch); if (this.recovery) clearTimeout(this.recovery);
     for (const timer of this.pending.values()) clearTimeout(timer); this.pending.clear(); this.expired.clear();
     if (this.playback.delivery) void fetch(absoluteUrl(this.playback.delivery.seedPath), { method: 'DELETE', credentials: 'same-origin', keepalive: true }).catch(() => undefined);
   }

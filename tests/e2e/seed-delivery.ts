@@ -82,7 +82,12 @@ try {
     const received = await load(viewer.page, kind, address + target); const expected = await (await viewer.context.request.get(address + target)).body(); assert.equal(hash(received), hash(expected));
     await viewer.page.waitForFunction(() => (window as unknown as TestWindow).seedTest.stats.p2pDownloaded > 0);
     if (kind === 'movie') {
-      await viewer.page.evaluate(() => (window as unknown as TestWindow).HighpassBridge.playhead(130)); await viewer.page.waitForTimeout(2500);
+      await viewer.page.evaluate(() => (window as unknown as TestWindow).HighpassBridge.playhead(130));
+      let warmed = false; for (let attempt = 0; attempt < 100; attempt++) {
+        const state = (await app.inject({ url: '/api/admin/seeds', headers: admin })).json<{ streams: { swarm: string; warmPositions: number[] }[] }>();
+        if (state.streams.some((seed) => seed.swarm === viewer.playback.swarmId && seed.warmPositions.some((position) => Math.abs(position - 130) < 4))) { warmed = true; break; }
+        await viewer.page.waitForTimeout(200);
+      } assert.ok(warmed, 'Seed deve confirmar a preparação do seek antes do teste sem HTTP');
       const far = text.split('\n').find((line) => line.endsWith('chunk000032.ts')); assert.ok(far);
       const seek = await load(viewer.page, 'seek-130', address + far); assert.equal(hash(seek), hash(await (await viewer.context.request.get(address + far)).body()));
     }

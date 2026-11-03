@@ -2,7 +2,7 @@ import { NativeSegmentCore } from './native-core.js';
 import type { Playback } from '../api.js';
 import { BrowserSeed } from './browser-seed.js';
 
-export interface AndroidBridgeApi { init(playback: Playback, enabled: boolean, seeder?: boolean): void; playlist(uri: string, text: string): void; load(id: string, uri: string, position: number, length: number): void; http(bytes: number): void; httpOnly(): void; resume(): void; playhead(position: number): void; seedTargets(positions: number[]): void; seedStatus(): { ready: boolean; lastSegmentAt: number; loads: number; failures: number } | undefined; destroy(): void }
+export interface AndroidBridgeApi { init(playback: Playback, enabled: boolean, seeder?: boolean): void; playlist(uri: string, text: string): void; load(id: string, uri: string, position: number, length: number): void; http(bytes: number): void; httpOnly(): void; resume(): void; playhead(position: number): void; seedTargets(positions: number[]): void; seedStatus(): { ready: boolean; lastSegmentAt: number; loads: number; failures: number; positions: number[] } | undefined; destroy(): void }
 
 declare global {
   interface Window {

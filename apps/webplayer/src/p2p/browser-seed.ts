@@ -8,7 +8,7 @@ export class BrowserSeed {
   private cursor = 0;
   private paused = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private statusValue = { ready: false, lastSegmentAt: 0, loads: 0, failures: 0 };
+  private statusValue = { ready: false, lastSegmentAt: 0, loads: 0, failures: 0, positions: [] as number[] };
   constructor(private readonly core: NativeSegmentCore, private readonly playback: Playback) { void this.cycle(); }
   targets(positions: number[]) { this.positions = positions.filter(Number.isFinite).slice(0, 32); this.paused = !this.positions.length; }
   status() { return { ...this.statusValue, ready: this.statusValue.ready && Date.now() - this.statusValue.lastSegmentAt < 15000 }; }
@@ -40,13 +40,13 @@ export class BrowserSeed {
         if (line?.startsWith('#EXT-X-STREAM-INF:') && next && !next.startsWith('#')) variants.push(new URL(next, root).href);
         if (line?.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=AUDIO')) { const uri = line.match(/URI="([^"]+)"/)?.[1]; if (uri) variants.push(new URL(uri, root).href); }
       }
-      const playlists = variants.length ? [...new Set(variants)].slice(0, 8) : [root]; let loaded = false;
+      const playlists = variants.length ? [...new Set(variants)].slice(0, 8) : [root]; let loaded = false; const warmed = new Set<number>();
       for (const uri of playlists) {
         if (this.closed) return;
         if (uri !== root) await this.manifest(uri);
-        const segments = this.core.seedSegments(uri); const selected = new Set<number>();
+        const segments = this.core.seedSegments(uri); const selected = new Set<number>(); const targets = this.targetsForCycle(); const completed = new Set<number>();
         if (this.playback.isLive) for (let index = Math.max(0, segments.length - 4); index < segments.length; index++) selected.add(index);
-        else for (const position of this.targetsForCycle()) {
+        else for (const position of targets) {
           const index = segments.findIndex((segment) => segment.endTime > position);
           if (index >= 0) for (let next = index; next < Math.min(segments.length, index + 3); next++) selected.add(next);
         }
@@ -55,10 +55,11 @@ export class BrowserSeed {
           const segment = segments[index]; if (!segment) continue;
           const range = segment.byteRange;
           const bytes = await this.core.load(segment.url, range?.start ?? 0, range ? range.end - range.start + 1 : -1);
-          if (bytes) { loaded = true; this.statusValue.lastSegmentAt = Date.now(); this.statusValue.loads++; }
+          if (bytes) { completed.add(index); loaded = true; this.statusValue.lastSegmentAt = Date.now(); this.statusValue.loads++; }
         }
+        for (const position of targets) if (completed.has(segments.findIndex((segment) => segment.endTime > position))) warmed.add(position);
       }
-      this.statusValue.ready = loaded;
+      this.statusValue.positions = [...warmed]; this.statusValue.ready = loaded;
     } catch { this.statusValue.ready = false; this.statusValue.failures++; }
     if (!this.closed) this.timer = setTimeout(() => { void this.cycle(); }, 1000);
   }

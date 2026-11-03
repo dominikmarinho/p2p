@@ -33,7 +33,7 @@ Benchmark local, sem consultar o XUI:
 BENCHMARK_BASE=http://127.0.0.1:3001 node --env-file=/opt/highpass/.env scripts/benchmark-http.mjs
 ```
 
-Ajuste a porta ao slot ativo. O teste usa 200 pedidos por rota e concorrência 4. Não desabilita limites para tráfego público nem faz carga contra a origem. Sem evidência de backlog/drops ou pressão de descritores, não se altera `sysctl` indiscriminadamente.
+Ajuste a porta ao slot ativo. O teste usa 200 pedidos de health e 40 de controle, com concorrência 4. Não desabilita limites para tráfego público nem faz carga contra a origem. Sem evidência de backlog/drops ou pressão de descritores, não se altera `sysctl` indiscriminadamente.
 
 ## TURN no host Linux
 

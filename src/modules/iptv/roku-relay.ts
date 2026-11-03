@@ -78,7 +78,7 @@ export class RokuRelay {
   async seedStatus(key: string, positions: number[]) {
     const relay = this.sessions.get(key); if (!relay) return undefined; relay.lastUsed = Date.now();
     return relay.page.evaluate((targets) => {
-      const bridge = (window as unknown as { HighpassBridge: { seedTargets(positions: number[]): void; seedStatus(): { ready: boolean; lastSegmentAt: number; loads: number; failures: number } | undefined } }).HighpassBridge;
+      const bridge = (window as unknown as { HighpassBridge: { seedTargets(positions: number[]): void; seedStatus(): { ready: boolean; lastSegmentAt: number; loads: number; failures: number; positions: number[] } | undefined } }).HighpassBridge;
       bridge.seedTargets(targets); return bridge.seedStatus();
     }, positions).catch(() => undefined);
   }
