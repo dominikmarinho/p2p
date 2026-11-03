@@ -7,4 +7,5 @@ export class XuiServersController {
   create = (input: XuiServerInput) => this.service.save(input);
   update = (id: string, input: XuiServerInput) => this.service.save(input, id);
   delete = (id: string) => this.service.delete(id);
+  testConnection = (id: string) => this.service.testConnection(id);
 }

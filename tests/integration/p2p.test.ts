@@ -66,14 +66,14 @@ describe('controle P2P e observabilidade', () => {
     expect((await app.inject('/admin/admin.js')).statusCode).toBe(200);
     expect((await app.inject('/api/admin/xui-servers')).statusCode).toBe(401);
   });
-  it('cadastra XUI, cifra o token e rejeita URLs fora da allowlist', async () => {
+  it('cadastra XUI, cifra as credenciais administrativas e rejeita URLs fora da allowlist', async () => {
     const invalid = await app.inject({ method: 'POST', url: '/api/admin/xui-servers', headers, payload: { name: 'Invalid', baseUrl: 'http://169.254.169.254' } });
     expect(invalid.statusCode).toBe(400);
-    const create = await app.inject({ method: 'POST', url: '/api/admin/xui-servers', headers, payload: { name: 'Test source', baseUrl: sourceUrl, apiToken: 'secret-xui-token' } });
+    const create = await app.inject({ method: 'POST', url: '/api/admin/xui-servers', headers, payload: { name: 'Test source', baseUrl: sourceUrl, adminAccessCode: 'admin-code', adminApiKey: 'secret-xui-token' } });
     expect(create.statusCode).toBe(201); serverId = create.json<{ id: string }>().id;
     const list = await app.inject({ url: '/api/admin/xui-servers', headers });
-    expect(list.body).not.toContain('secret-xui-token'); expect(list.body).not.toContain('encryptedApiToken');
-    expect(list.json<{ hasApiToken: boolean }[]>().some((server) => server.hasApiToken)).toBe(true);
+    expect(list.body).not.toContain('secret-xui-token'); expect(list.body).not.toContain('encryptedAdmin'); expect(list.body).not.toContain('admin-code');
+    expect(list.json<{ hasAdminApiKey: boolean }[]>().some((server) => server.hasAdminApiKey)).toBe(true);
     expect((await app.inject({ method: 'PUT', url: `/api/admin/xui-servers/${serverId}`, headers, payload: { name: 'Updated', baseUrl: sourceUrl } })).statusCode).toBe(200);
   });
   it('gerencia regras e parâmetros e impede remover origem em uso', async () => {

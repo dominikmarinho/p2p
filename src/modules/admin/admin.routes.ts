@@ -32,6 +32,7 @@ export function adminRoutes(app: FastifyInstance, service: AdminService, xui: Xu
     return payload;
   });
   router.get('/xui-servers', async () => xui.list());
+  router.post('/xui-servers/:id/test', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } }, schema: { params: uuidParams } }, async (request) => xui.testConnection(request.params.id));
   router.post('/xui-servers', { schema: { body: xuiServerDto } }, async (request, reply) => reply.code(201).send(await xui.create(request.body)));
   router.put('/xui-servers/:id', { schema: { params: uuidParams, body: xuiServerDto } }, async (request) => xui.update(request.params.id, request.body));
   router.delete('/xui-servers/:id', { schema: { params: uuidParams } }, async (request, reply) => { await xui.delete(request.params.id); return reply.code(204).send(); });

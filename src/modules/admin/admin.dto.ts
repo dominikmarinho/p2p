@@ -1,7 +1,13 @@
 import { BlockList, isIP } from 'node:net';
 import { z } from 'zod';
 
-export const xuiServerDto = z.object({ name: z.string().trim().min(1).max(100), baseUrl: z.url().max(500), apiToken: z.string().max(4096).optional(), enabled: z.boolean().default(true) }).strict();
+export const xuiServerDto = z.object({
+  name: z.string().trim().min(1).max(100),
+  baseUrl: z.url().max(500),
+  adminAccessCode: z.string().trim().regex(/^[A-Za-z0-9_-]{0,128}$/, 'Informe apenas o Access Code Admin API').optional(),
+  adminApiKey: z.string().trim().max(4096).refine((value) => Array.from(value).every((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127), 'API Key inválida').optional(),
+  enabled: z.boolean().default(true),
+}).strict();
 export const routeDto = z.object({ channel: z.string().regex(/^[\w-]{1,64}$/), streamId: z.number().int().positive(), serverId: z.uuid(), fallbackServerIds: z.array(z.uuid()).max(3).default([]), enabled: z.boolean().default(true) }).strict();
 export const configDto = z.object({ bufferSeconds: z.number().int().min(1).max(120), maxUploadKbps: z.number().int().min(64).max(100000), maxConnectionsPerNode: z.number().int().min(1).max(20), maxPeersPerChannel: z.number().int().min(1).max(1000) }).strict();
 export const uuidParams = z.object({ id: z.uuid() });

@@ -67,7 +67,7 @@ tests/                   Unitários, integração e navegador/P2P real
 
 Sessões IPTV consultam o XUI e não criam usuários locais. As credenciais necessárias para buscar o stream são cifradas no Redis, com expiração e revalidação periódica; não ficam no banco de usuários do serviço. Os módulos REST/JWT/refresh-token/notes originais continuam disponíveis como exemplo independente de CRUD.
 
-O painel fica em `/admin`, com login administrativo por usuário/senha e troca de senha no perfil; chaves de operador atendem automações. Os clientes IPTV usam a origem fixa em `XUI_BASE_URL`; o CRUD de origens/regras também atende o plano de controle anterior. [O guia do ecossistema](docs/ecosystem.md) explica essa relação, a API e os limites. [O guia administrativo](docs/p2p-observability.md) detalha as operações do painel.
+O painel fica em `/admin`, com login administrativo por usuário/senha e troca de senha no perfil. Em **Servidores XUI ONE**, configure **Access Code Admin API** e **API Key do administrador XUI**, com o botão **Testar Admin API** para consulta de leitura. **Chaves do Control Plane** gera credenciais independentes para automações do P2P. Os clientes IPTV usam a origem fixa em `XUI_BASE_URL`; o CRUD de origens/regras também atende o plano de controle anterior. [O guia do ecossistema](docs/ecosystem.md) explica essa relação, a API e os limites. [O guia administrativo](docs/p2p-observability.md) detalha as operações do painel.
 
 ## 4. WebPlayer e Android TV/Mobile
 

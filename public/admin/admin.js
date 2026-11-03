@@ -2,14 +2,16 @@ const $ = (id) => document.getElementById(id);
 let mustChangePassword = false;
 let view = 'overview';
 let editing = null;
-const titles = { overview: 'Visão geral', 'xui-servers': 'Servidores XUI ONE', routes: 'Roteamento de canais', config: 'Parâmetros P2P', keys: 'Chaves de API', whitelist: 'Whitelist de IPs', audit: 'Auditoria', profile: 'Meu perfil' };
+const titles = { overview: 'Visão geral', 'xui-servers': 'Servidores XUI ONE', routes: 'Roteamento de canais', config: 'Parâmetros P2P', keys: 'Chaves do Control Plane', whitelist: 'Whitelist de IPs', audit: 'Auditoria', profile: 'Meu perfil' };
 const definitions = {
-  'xui-servers': [['name', 'Nome', 'text'], ['baseUrl', 'URL base autorizada', 'url'], ['apiToken', 'Token de API (vazio mantém o atual)', 'password'], ['enabled', 'Habilitado', 'checkbox']],
+  'xui-servers': [['name', 'Nome', 'text'], ['baseUrl', 'URL base autorizada', 'url'], ['adminAccessCode', 'Access Code do XUI (tipo Admin API)', 'password'], ['adminApiKey', 'API Key do administrador XUI', 'password'], ['enabled', 'Habilitado', 'checkbox']],
   routes: [['channel', 'Identificador do canal', 'text'], ['streamId', 'ID do stream XUI', 'number'], ['serverId', 'UUID do servidor principal', 'text'], ['fallbackServerIds', 'UUIDs de fallback, separados por vírgulas', 'text'], ['enabled', 'Habilitado', 'checkbox']],
   config: [['bufferSeconds', 'Buffer em segundos', 'number'], ['maxUploadKbps', 'Upload por peer em Kbps (informado ao cliente)', 'number'], ['maxConnectionsPerNode', 'Conexões por linha', 'number'], ['maxPeersPerChannel', 'Peers por canal', 'number']],
-  keys: [['name', 'Nome da chave', 'text']], whitelist: [['cidr', 'IP ou CIDR', 'text']],
+  keys: [['name', 'Nome da automação P2P', 'text']], whitelist: [['cidr', 'IP ou CIDR', 'text']],
 };
-const columns = { 'xui-servers': ['name', 'baseUrl', 'enabled', 'hasApiToken', 'id'], routes: ['channel', 'streamId', 'serverId', 'enabled'], keys: ['name', 'id', 'createdAt'], whitelist: ['cidr', 'id'], audit: ['createdAt', 'actor', 'action', 'resource', 'ip'] };
+const columns = { 'xui-servers': ['name', 'baseUrl', 'enabled', 'hasAdminAccessCode', 'hasAdminApiKey', 'id'], routes: ['channel', 'streamId', 'serverId', 'enabled'], keys: ['name', 'id', 'createdAt'], whitelist: ['cidr', 'id'], audit: ['createdAt', 'actor', 'action', 'resource', 'ip'] };
+const labels = { name: 'Nome', baseUrl: 'URL base', enabled: 'Habilitado', hasAdminAccessCode: 'Access Code configurado', hasAdminApiKey: 'API Key XUI configurada', id: 'ID', createdAt: 'Criado em' };
+const secretFields = new Set(['adminAccessCode', 'adminApiKey']);
 async function api(path, options = {}) {
   const response = await fetch('/api/admin/' + path, { ...options, headers: { ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}) } });
   if (response.status === 204) return null;
@@ -37,6 +39,17 @@ async function render() {
       $('content').append(cards, panel); return;
     }
     const rows = await api(view);
+    if (view === 'xui-servers') {
+      const help = element('div', undefined, 'panel');
+      help.append(element('h2', 'Credenciais administrativas do XUI ONE'), element('p', 'Cadastre o Access Code do tipo Admin API e a API Key gerada no perfil do administrador do XUI. Salve e use Testar Admin API para validar a conexão.'), element('p', 'A URL base contém o domínio e a porta da origem. Cole somente o código no campo Access Code. Essas credenciais são usadas pelo servidor; o player continua usando usuário e senha da linha.'));
+      if (rows.some((row) => row.hasLegacyApiToken)) help.append(element('p', 'Há uma credencial do cadastro anterior para revisar. Preencha os dois campos corretos e remova a credencial anterior após conferir.'));
+      $('content').append(help);
+    }
+    if (view === 'keys') {
+      const help = element('div', undefined, 'panel');
+      help.append(element('h2', 'Acesso de automações à API do P2P'), element('p', 'As chaves geradas aqui autorizam integrações com o Control Plane. A API Key do XUI ONE deve ser cadastrada em Servidores XUI ONE.'));
+      $('content').append(help);
+    }
     if (view === 'config') {
       const panel = element('div', undefined, 'panel');
       for (const [name, label] of definitions.config) panel.append(element('p', `${label}: ${rows[name]}`));
@@ -47,15 +60,19 @@ async function render() {
     $('content').append(toolbar);
     if (!rows.length) { $('content').append(element('div', 'Nenhum registro. Adicione a primeira configuração.', 'empty')); return; }
     const wrap = element('div', undefined, 'table-wrap'); const table = element('table'); const header = element('tr');
-    columns[view].forEach((name) => header.append(element('th', name))); if (view !== 'audit') header.append(element('th', 'Ações')); table.append(header);
+    columns[view].forEach((name) => header.append(element('th', labels[name] ?? name))); if (view !== 'audit') header.append(element('th', 'Ações')); table.append(header);
     rows.forEach((row) => {
       const tr = element('tr'); columns[view].forEach((name) => tr.append(element('td', typeof row[name] === 'boolean' ? (row[name] ? 'Sim' : 'Não') : String(row[name] ?? ''))));
       if (view !== 'audit') {
         const actions = element('td');
         if (definitions[view]) { const edit = element('button', 'Editar'); edit.onclick = () => openEditor(row); actions.append(edit); }
-        if (view === 'xui-servers' && row.hasApiToken) {
-          const clear = element('button', 'Remover token');
-          clear.onclick = async () => { try { await api(`xui-servers/${row.id}`, { method: 'PUT', body: JSON.stringify({ name: row.name, baseUrl: row.baseUrl, enabled: row.enabled, apiToken: '' }) }); await render(); } catch (error) { $('notice').textContent = error.message; } }; actions.append(clear);
+        if (view === 'xui-servers') {
+          const test = element('button', 'Testar Admin API');
+          test.onclick = async () => { $('notice').textContent = ''; test.disabled = true; test.textContent = 'Testando…'; try { const result = await api(`xui-servers/${row.id}/test`, { method: 'POST' }); $('notice').textContent = `Admin API autenticada: ${result.serverCount} servidor(es) retornado(s).`; } catch (error) { $('notice').textContent = error.message; } finally { test.disabled = false; test.textContent = 'Testar Admin API'; } }; actions.append(test);
+          if (row.hasAdminAccessCode || row.hasAdminApiKey || row.hasLegacyApiToken) {
+            const clear = element('button', 'Remover credenciais Admin API');
+            clear.onclick = async () => { if (!confirm('Remover as credenciais administrativas deste servidor XUI?')) return; try { await api(`xui-servers/${row.id}`, { method: 'PUT', body: JSON.stringify({ name: row.name, baseUrl: row.baseUrl, enabled: row.enabled, adminAccessCode: '', adminApiKey: '' }) }); await render(); } catch (error) { $('notice').textContent = error.message; } }; actions.append(clear);
+          }
         }
         const remove = element('button', 'Excluir'); remove.onclick = async () => { if (!confirm('Excluir este registro?')) return; try { await api(`${view}/${encodeURIComponent(row.id ?? row.channel)}`, { method: 'DELETE' }); await render(); } catch (error) { $('notice').textContent = error.message; } }; actions.append(remove); tr.append(actions);
       }
@@ -65,12 +82,13 @@ async function render() {
 }
 function openEditor(row) {
   editing = row; $('fields').replaceChildren(); $('edit-error').textContent = ''; $('edit-title').textContent = (row ? 'Editar · ' : 'Adicionar · ') + titles[view];
+  if (view === 'xui-servers') $('fields').append(element('p', 'Deixe os campos de credenciais em branco para manter os valores já salvos. A API Key é gerada no perfil do administrador no XUI ONE.'));
   definitions[view].forEach(([name, label, type]) => {
     const field = element('label', label); const input = element('input'); input.name = name; input.type = type;
     if (type === 'checkbox') input.checked = row ? Boolean(row[name]) : true;
-    else { input.value = Array.isArray(row?.[name]) ? row[name].join(', ') : (row?.[name] ?? ''); input.required = !['apiToken', 'fallbackServerIds'].includes(name); }
+    else { input.value = Array.isArray(row?.[name]) ? row[name].join(', ') : (row?.[name] ?? ''); input.required = !secretFields.has(name) && name !== 'fallbackServerIds'; }
     if (type === 'number') { input.min = '1'; input.step = '1'; }
-    if (type === 'password') input.autocomplete = 'off';
+    if (type === 'password') { input.autocomplete = 'new-password'; input.value = ''; input.placeholder = row ? 'Vazio mantém o valor atual' : 'Necessário para testar a Admin API'; }
     if (name === 'channel' && row) input.readOnly = true;
     field.append(input); $('fields').append(field);
   }); $('editor').showModal();
@@ -79,7 +97,7 @@ $('edit-form').onsubmit = async (event) => {
   event.preventDefault(); const body = {};
   for (const [name, , type] of definitions[view]) {
     const input = $('edit-form').elements.namedItem(name);
-    if (name === 'apiToken' && !input.value) continue;
+    if (secretFields.has(name) && !input.value.trim()) continue;
     body[name] = type === 'checkbox' ? input.checked : type === 'number' ? Number(input.value) : name === 'fallbackServerIds' ? input.value.split(',').map((part) => part.trim()).filter(Boolean) : input.value;
   }
   try {

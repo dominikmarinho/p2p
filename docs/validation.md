@@ -6,7 +6,7 @@ Executada em 03/11/2026 com Node 22, PG16 e Redis7 isolados do ambiente de produ
 | --- | --- |
 | Tipos backend/Web e ESLint | Aprovados |
 | Unitários | 8 testes aprovados, incluindo percentuais e URLs estáveis/autenticadas |
-| Integração | 36 testes aprovados com PostgreSQL/Redis reais |
+| Integração | 44 testes aprovados com PostgreSQL/Redis reais, incluindo Admin API XUI |
 | Android | APK debug e 2 testes JVM aprovados |
 | Live Web → ponte Android | Segmento real de 459.848 bytes, receptor HTTP bloqueado, SHA-256 idêntico |
 | Busca VOD na ponte Android | Busca para 130s: segmento de 204.544 bytes recebido por P2P, HTTP do receptor bloqueado, SHA-256 idêntico |
@@ -19,6 +19,8 @@ Executada em 03/11/2026 com Node 22, PG16 e Redis7 isolados do ambiente de produ
 | SSL | Certificado público Let's Encrypt emitido para p2p.remoto.api.br |
 
 Os números de bytes variam conforme o segmento selecionado em cada execução. O teste usa vídeo sintético e uma origem XUI controlada. Não representa benchmark de capacidade, autenticação com uma linha real ou homologação dos aparelhos físicos. Samsung requer assinatura própria; APK é debug; Roku e webOS exigem os modos de desenvolvimento/validação de loja adequados.
+
+A correção de credenciais XUI acrescenta oito testes de integração: cifragem e ocultação de Access Code/API Key, consulta administrativa de leitura, preservação na edição, validação de paths, erros sem segredos, limites/redirects, separação da Player API e remoção explícita.
 
 As suítes verificam JWT/refresh, isolamento do CRUD, sinalização entre instâncias, autenticação administrativa, troca de senha e revogação de sessões, linha inválida/expirada/desabilitada, catálogo/EPG/episódios, Range/206, permissões de mídia e tracker, percentuais e adulteração de recursos. O navegador exercita login com dois campos, reprodução, favoritos, séries, logout, viewport móvel e controle por teclas direcionais.
 

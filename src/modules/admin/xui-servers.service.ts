@@ -2,7 +2,8 @@ import { eq, or, sql } from 'drizzle-orm';
 import type { Database } from '../../db/index.js';
 import { streamRoutes, xuiServers } from '../../db/schema.js';
 import type { Environment } from '../../config/env.js';
-import { encrypt } from '../../lib/secrets.js';
+import { decrypt, encrypt } from '../../lib/secrets.js';
+import { checkXuiAdminConnection } from '../../services/xui-admin.client.js';
 import { AppError } from '../../lib/errors.js';
 import type { XuiServerInput } from './admin.dto.js';
 
@@ -24,18 +25,33 @@ export class XuiServersService {
   }
   async list() {
     const rows = await this.db.select().from(xuiServers).orderBy(xuiServers.name).limit(200);
-    return rows.map(({ encryptedApiToken, ...row }) => ({ ...row, hasApiToken: Boolean(encryptedApiToken) }));
+    return rows.map(({ encryptedApiToken, encryptedAdminAccessCode, encryptedAdminApiKey, ...row }) => ({
+      ...row,
+      hasAdminAccessCode: Boolean(encryptedAdminAccessCode),
+      hasAdminApiKey: Boolean(encryptedAdminApiKey),
+      hasLegacyApiToken: Boolean(encryptedApiToken),
+    }));
   }
   async save(input: XuiServerInput, id?: string) {
     const values = {
       name: input.name, baseUrl: this.validateUrl(input.baseUrl).href, enabled: input.enabled, updatedAt: new Date(),
-      ...(input.apiToken !== undefined ? { encryptedApiToken: input.apiToken ? encrypt(input.apiToken, this.env.CONFIG_ENCRYPTION_KEY) : null } : {}),
+      ...(input.adminAccessCode !== undefined ? { encryptedAdminAccessCode: input.adminAccessCode ? encrypt(input.adminAccessCode, this.env.CONFIG_ENCRYPTION_KEY) : null } : {}),
+      ...(input.adminApiKey !== undefined ? { encryptedAdminApiKey: input.adminApiKey ? encrypt(input.adminApiKey, this.env.CONFIG_ENCRYPTION_KEY) : null } : {}),
+      ...(input.adminAccessCode === '' && input.adminApiKey === '' ? { encryptedApiToken: null } : {}),
     };
     const rows = id ? await this.db.update(xuiServers).set(values).where(eq(xuiServers.id, id)).returning({ id: xuiServers.id })
       : await this.db.insert(xuiServers).values(values).returning({ id: xuiServers.id });
     const row = rows[0];
     if (!row) throw new AppError(404, 'XUI_NOT_FOUND', 'Servidor não encontrado');
     return row;
+  }
+  async testConnection(id: string) {
+    const [server] = await this.db.select().from(xuiServers).where(eq(xuiServers.id, id)).limit(1);
+    if (!server) throw new AppError(404, 'XUI_NOT_FOUND', 'Servidor não encontrado');
+    if (!server.encryptedAdminAccessCode || !server.encryptedAdminApiKey) throw new AppError(400, 'XUI_ADMIN_CREDENTIALS_REQUIRED', 'Informe o Access Code do tipo Admin API e a API Key do administrador do XUI ONE neste servidor');
+    const accessCode = decrypt(server.encryptedAdminAccessCode, this.env.CONFIG_ENCRYPTION_KEY);
+    const apiKey = decrypt(server.encryptedAdminApiKey, this.env.CONFIG_ENCRYPTION_KEY);
+    return checkXuiAdminConnection(this.validateUrl(server.baseUrl), accessCode, apiKey);
   }
   async delete(id: string) {
     await this.db.transaction(async (transaction) => {

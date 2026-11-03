@@ -7,7 +7,7 @@ import { streamRoutes, xuiServers } from '../db/schema.js';
 import type { Environment } from '../config/env.js';
 import type { XuiServersService } from '../modules/admin/xui-servers.service.js';
 import type { Metrics } from '../lib/metrics.js';
-import { decrypt, digest } from '../lib/secrets.js';
+import { digest } from '../lib/secrets.js';
 import { AppError } from '../lib/errors.js';
 
 const credential = z.string().min(1).max(256).refine((value) => !/[\\/]/.test(value) && Array.from(value).every((character) => character.charCodeAt(0) >= 32) && value !== '.' && value !== '..', 'Credencial contém segmento de URL inválido');
@@ -71,7 +71,6 @@ export class XuiAuthService {
     url.searchParams.set('username', input.username);
     url.searchParams.set('password', input.password);
     const headers: Record<string, string> = { accept: 'application/json' };
-    if (server.encryptedApiToken) headers.authorization = `Bearer ${decrypt(server.encryptedApiToken, this.env.CONFIG_ENCRYPTION_KEY)}`;
     const response = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(3000) });
     if (response.status === 401 || response.status === 403) { await response.body?.cancel(); throw new AppError(401, 'XUI_AUTH', 'Linha não autorizada'); }
     if (!response.ok) { await response.body?.cancel(); throw new Error('Resposta XUI indisponível'); }

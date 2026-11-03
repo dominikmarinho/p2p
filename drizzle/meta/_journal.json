@@ -22,6 +22,13 @@
       "when": 1793679453141,
       "tag": "0002_admin_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793687553646,
+      "tag": "0003_xui_admin_credentials",
+      "breakpoints": true
     }
   ]
 }

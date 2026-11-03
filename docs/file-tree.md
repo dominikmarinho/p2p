@@ -112,10 +112,12 @@ highpass-p2p-engine/
 │   │   ├── 0000_snapshot.json
 │   │   ├── 0001_snapshot.json
 │   │   ├── 0002_snapshot.json
+│   │   ├── 0003_snapshot.json
 │   │   └── _journal.json
 │   ├── 0000_init.sql
 │   ├── 0001_p2p_control_plane.sql
-│   └── 0002_admin_credentials.sql
+│   ├── 0002_admin_credentials.sql
+│   └── 0003_xui_admin_credentials.sql
 ├── grafana/
 │   └── provisioning/
 │       ├── dashboards/
@@ -194,6 +196,7 @@ highpass-p2p-engine/
 │   │       └── realtime.routes.ts
 │   ├── services/
 │   │   ├── peer-manager.ts
+│   │   ├── xui-admin.client.ts
 │   │   └── xui-auth.service.ts
 │   ├── tests/
 │   │   └── xui-integration.test.ts
@@ -214,7 +217,8 @@ highpass-p2p-engine/
 │   │   ├── admin-login.test.ts
 │   │   ├── api.test.ts
 │   │   ├── iptv.test.ts
-│   │   └── p2p.test.ts
+│   │   ├── p2p.test.ts
+│   │   └── xui-admin.test.ts
 │   └── unit/
 │       ├── control-plane.test.ts
 │       ├── resources.test.ts

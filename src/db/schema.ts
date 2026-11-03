@@ -31,6 +31,8 @@ export const xuiServers = pgTable('xui_servers', {
   name: text('name').notNull(),
   baseUrl: text('base_url').notNull(),
   encryptedApiToken: text('encrypted_api_token'),
+  encryptedAdminAccessCode: text('encrypted_admin_access_code'),
+  encryptedAdminApiKey: text('encrypted_admin_api_key'),
   enabled: boolean('enabled').notNull().default(true),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
