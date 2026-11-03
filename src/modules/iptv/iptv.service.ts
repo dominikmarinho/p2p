@@ -178,19 +178,42 @@ export class IptvService {
     await this.sessionByHash(grant.sessionHash);
     return grant;
   }
-  resource(grantId: string, sealed: string): URL {
+  async resource(grantId: string, sealed: string): Promise<URL> {
     try {
       const parsed = object(JSON.parse(decryptResource(sealed, this.env.CONFIG_ENCRYPTION_KEY, grantId)) as unknown);
-      if (parsed.grantId !== grantId || typeof parsed.url !== 'string') throw new Error('Grant diferente');
-      const url = xuiTransportUrl(new URL(parsed.url), this.env); this.checkUpstream(url); return url;
-    } catch { throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
+      if (parsed.grantId !== grantId) throw new Error('Grant diferente');
+      let value = parsed.url;
+      if (typeof parsed.alias === 'string' && /^[a-f0-9]{64}$/.test(parsed.alias)) {
+        const saved = await this.redis.get(`highpass:hls:${digest(grantId)}:${parsed.alias}`);
+        if (!saved) throw new AppError(404, 'SEGMENT_EXPIRED', 'Segmento fora da janela ao vivo');
+        value = decrypt(saved, this.env.CONFIG_ENCRYPTION_KEY);
+      }
+      if (typeof value !== 'string') throw new Error('Recurso inválido');
+      const url = xuiTransportUrl(new URL(value), this.env); this.checkUpstream(url); return url;
+    } catch (error) { if (error instanceof AppError && error.code === 'SEGMENT_EXPIRED') throw error; throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
   }
-  rewriteManifest(text: string, base: URL, grantId: string): string {
+  async rewriteManifest(text: string, base: URL, grantId: string, playlistIdentity: string): Promise<string> {
     const local = (value: string) => this.resourceUrl(grantId, new URL(value, base));
-    return text.split(/\r?\n/).map((line) => {
+    const lines = text.split(/\r?\n/);
+    let sequence = Number(lines.find((line) => line.startsWith('#EXT-X-MEDIA-SEQUENCE:'))?.split(':')[1] ?? 0);
+    const discontinuity = lines.find((line) => line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE:')) ?? '';
+    const pipeline = this.redis.pipeline(); let media = false; let count = 0;
+    const result = lines.map((line) => {
       if (!line.trim()) return line;
+      if (line.startsWith('#EXTINF:')) media = true;
       if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_match, uri: string) => `URI="${local(uri)}"`);
-      return local(line.trim());
+      if (!media) return local(line.trim());
+      media = false;
+      if (++count > 2000 || !Number.isSafeInteger(sequence)) throw new AppError(502, 'HLS_SEGMENTS', 'Playlist excedeu o limite de segmentos');
+      const url = xuiTransportUrl(new URL(line.trim(), base), this.env); this.checkUpstream(url);
+      // A assinatura XUI pode mudar sem mudar os bytes/sn. O identificador local
+      // fica estável e somente o destino cifrado expira/é atualizado no Redis.
+      const alias = digest(`${playlistIdentity}:${discontinuity}:${sequence++}`);
+      pipeline.set(`highpass:hls:${digest(grantId)}:${alias}`, encrypt(url.href, this.env.CONFIG_ENCRYPTION_KEY), 'EX', 600);
+      const sealed = encryptResource(JSON.stringify({ grantId, alias }), this.env.CONFIG_ENCRYPTION_KEY, grantId);
+      return `/api/iptv/media/${grantId}/${sealed}`;
     }).join('\n');
+    if (count) { const replies = await pipeline.exec(); if (!replies || replies.some(([error]) => error)) throw new AppError(503, 'HLS_CACHE', 'Mapeamento de segmentos indisponível'); }
+    return result;
   }
 }
