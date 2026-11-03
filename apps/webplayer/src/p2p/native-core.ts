@@ -9,6 +9,7 @@ const runtimeId = (url: string, start?: number, end?: number) => start !== undef
 export class NativeSegmentCore {
   readonly core: Core;
   private httpMode = false;
+  private readonly segmentTimes = new Map<string, number>();
   private readonly stats;
   private readonly streams = new Map<string, StreamProperties>();
   constructor(private readonly playback: Playback, enabled: boolean, onStats: (stats: P2PStats) => void) {
@@ -48,13 +49,17 @@ export class NativeSegmentCore {
       }
     }
     const current = this.core.getStreamSegmentRuntimeIds(uri) ?? new Set<string>(); const next = new Set(segments.map((segment) => segment.runtimeId));
+    for (const segment of segments) this.segmentTimes.set(segment.runtimeId, segment.startTime);
+    for (const id of current) if (!next.has(id)) this.segmentTimes.delete(id);
     this.core.updateStream(uri, segments.filter((segment) => !current.has(segment.runtimeId)), [...current].filter((id) => !next.has(id)));
-    this.core.updatePlayback(segments[0]?.startTime ?? 0, 1);
+    if (this.playback.isLive) this.core.updatePlayback(segments[0]?.startTime ?? 0, 1);
   }
   async load(url: string, position: number, length: number): Promise<ArrayBuffer | null> {
     if (this.httpMode) return null;
     if (position > 0 && length <= 0) return null;
     const id = runtimeId(url, position > 0 || length > 0 ? position : undefined, length > 0 ? position + length - 1 : undefined);
+    const playhead = this.segmentTimes.get(id);
+    if (!this.playback.isLive && playhead !== undefined) this.core.updatePlayback(playhead, 1);
     if (!this.core.hasSegment(id) || !this.core.isSegmentLoadable(id)) return null;
     return new Promise<ArrayBuffer>((resolve, reject) => {
       const timer = setTimeout(() => { this.core.abortSegmentLoading(id); reject(new Error('P2P timeout')); }, 12000);
@@ -63,5 +68,5 @@ export class NativeSegmentCore {
   }
   addHttp(bytes: number) { this.stats.addHttp(bytes); }
   httpOnly() { if (!this.httpMode) { this.httpMode = true; this.stats.clearPeers(); this.core.destroy(); } }
-  destroy() { this.stats.destroy(); if (!this.httpMode) this.core.destroy(); }
+  destroy() { this.segmentTimes.clear(); this.stats.destroy(); if (!this.httpMode) this.core.destroy(); }
 }

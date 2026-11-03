@@ -9,6 +9,7 @@ Executada em 03/11/2026 com Node 22, PG16 e Redis7 isolados do ambiente de produ
 | Integração | 36 testes aprovados com PostgreSQL/Redis reais |
 | Android | APK debug e 2 testes JVM aprovados |
 | Live Web → ponte Android | Segmento real de 459.848 bytes, receptor HTTP bloqueado, SHA-256 idêntico |
+| Busca VOD na ponte Android | Busca para 130s: segmento de 204.544 bytes recebido por P2P, HTTP do receptor bloqueado, SHA-256 idêntico |
 | VOD Web → gateway Roku | 1.833.752 bytes P2P na execução registrada, peer real e percentuais somando 100% |
 | Remux VOD | HLS reproduzido no navegador; saída de duas linhas com SHA-256 idêntico |
 | Roku | BrightScript validado e ZIP gerado |
@@ -38,3 +39,5 @@ apps/android/gradlew -p apps/android :app:assembleDebug :app:testDebugUnitTest
 Para os testes exporte NODE_ENV=test, DATABASE_URL de um banco exclusivo chamado highpass_test, REDIS_HOST/PORT/PASSWORD e JWT_SECRET. Instale FFmpeg, JDK17 e SDK35 conforme os guias. CI reproduz esse fluxo com serviços isolados e publica os resultados no repositório. Os testes devem falhar se as dependências não estiverem prontas; não são pulados silenciosamente.
 
 Os ensaios anteriores de troca blue/green verificaram continuidade HTTP e preservação do slot anterior quando migrations falham. Conexões WebSocket reconectam após a drenagem; não são transferidas entre processos. Migrations precisam ser compatíveis com ambos os slots. Banco e Redis continuam sendo serviços de um único host.
+
+A ponte Android mantém os manifests recebidos enquanto a WebView inicializa, atualiza a posição do motor P2P ao buscar em VOD e libera as requisições pendentes antes de encerrar o ExoPlayer. O teste de busca usa o mesmo Core/ponte JavaScript no Chromium; a validação física de Android TV e smartphones permanece necessária.

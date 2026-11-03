@@ -30,7 +30,7 @@ class P2PDataSource(private val bridge: P2PBridge, token: String) : BaseDataSour
             val output = ByteArrayOutputStream(); val chunk = ByteArray(8192)
             while (true) { val count = http.read(chunk, 0, chunk.size); if (count == C.RESULT_END_OF_INPUT) break; if (output.size() + count > 1024 * 1024) throw IOException("Playlist acima de 1 MiB"); output.write(chunk, 0, count) }
             val bytes = output.toByteArray(); buffered = bytes; http.close(); usingHttp = false
-            bridge.playlist(dataSpec.uri.toString(), String(bytes)); bridge.http(bytes.size)
+            bridge.playlist(dataSpec.uri.toString(), String(bytes))
             opened = true; transferStarted(dataSpec); return bytes.size.toLong()
         }
         opened = true; transferStarted(dataSpec); return length

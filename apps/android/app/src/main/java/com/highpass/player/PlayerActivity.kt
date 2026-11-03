@@ -67,5 +67,5 @@ class PlayerActivity : ComponentActivity() {
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode in listOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)) { playerView.showController(); return true }
         return super.dispatchKeyEvent(event)
     }
-    override fun onStop() { super.onStop(); resumePosition = player?.currentPosition ?: 0; playerView.player = null; player?.release(); player = null; bridge?.close(); bridge = null; finish() }
+    override fun onStop() { super.onStop(); resumePosition = player?.currentPosition ?: 0; playerView.player = null; bridge?.close(); bridge = null; player?.release(); player = null; finish() }
 }
