@@ -20,6 +20,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.ui.PlayerView
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 @UnstableApi
 class PlayerActivity : ComponentActivity() {
@@ -41,7 +42,7 @@ class PlayerActivity : ComponentActivity() {
         val enabled = getSharedPreferences("highpass-settings", MODE_PRIVATE).getBoolean("p2p", true)
         val token = SessionStore(this).token() ?: run { finish(); return }
         val transport = if (playback.optBoolean("isHls")) P2PBridge(this, playback, token, enabled) { raw ->
-            runCatching { val value = JSONObject(raw); stats.text = "HTTP ${"%.1f".format(value.optDouble("httpPercentage"))}% · P2P ${"%.1f".format(value.optDouble("p2pPercentage"))}% · ${"%.1f".format(value.optDouble("totalDownloaded") / 1048576)} MB · ${value.optInt("peers")} peers  ↓ ${value.optDouble("downloadRate").toInt() / 1024} KB/s  ↑ ${value.optDouble("uploadRate").toInt() / 1024} KB/s  · ${value.optDouble("saving").toInt()}% economia" }
+            runCatching { val value = JSONObject(raw); val p2pPercentage = (value.optDouble("p2pPercentage", 0.0) * 10).roundToInt() / 10.0; val httpPercentage = if (value.optDouble("totalDownloaded", 0.0) > 0) 100 - p2pPercentage else 0.0; stats.text = "HTTP ${"%.1f".format(httpPercentage)}% · P2P ${"%.1f".format(p2pPercentage)}% · ${"%.1f".format(value.optDouble("totalDownloaded") / 1048576)} MB · ${value.optInt("peers")} peers  ↓ ${value.optDouble("downloadRate").toInt() / 1024} KB/s  ↑ ${value.optDouble("uploadRate").toInt() / 1024} KB/s  · ${value.optDouble("saving").toInt()}% economia" }
         } else null; bridge = transport
         val factory: DataSource.Factory = if (transport != null) {
             root.addView(transport.webView, FrameLayout.LayoutParams(1, 1)); transport.webView.alpha = 0.01f
