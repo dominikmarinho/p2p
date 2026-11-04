@@ -34,23 +34,23 @@ export class RokuRelay {
     // Cooperative cancellation lets the in-flight protocol operation finish first.
     if (starting) await starting.promise.catch(() => undefined);
   }
-  private ensure(id: string, token: string, base: string, seedGrant?: string) {
+  private ensure(id: string, token: string, base: string, seedGrant?: string, replica = false) {
     const existing = this.sessions.get(id); if (existing) return Promise.resolve(existing);
     const pending = this.starts.get(id); if (pending) return pending.promise;
-    if (this.closed || this.sessions.size + this.starts.size >= this.service.env.P2P_RELAY_MAX_SESSIONS + this.service.env.P2P_SEED_MAX_STREAMS) return Promise.resolve(undefined);
+    if (this.closed || this.sessions.size + this.starts.size >= this.service.env.P2P_RELAY_MAX_SESSIONS + this.service.env.P2P_SEED_MAX_STREAMS * this.service.env.P2P_SEED_WORKERS) return Promise.resolve(undefined);
     if (!seedGrant && [...this.sessions.values()].filter((session) => !session.seed).length >= this.service.env.P2P_RELAY_MAX_SESSIONS) return Promise.resolve(undefined);
     const starting: Starting = { promise: Promise.resolve(undefined), cancelled: false };
     this.starts.set(id, starting);
-    starting.promise = this.start(id, token, base, starting, seedGrant).finally(() => { if (this.starts.get(id) === starting) this.starts.delete(id); });
+    starting.promise = this.start(id, token, base, starting, seedGrant, replica).finally(() => { if (this.starts.get(id) === starting) this.starts.delete(id); });
     return starting.promise;
   }
-  private async start(id: string, token: string, base: string, starting: Starting, seedGrant?: string): Promise<Relay | undefined> {
+  private async start(id: string, token: string, base: string, starting: Starting, seedGrant?: string, replica = false): Promise<Relay | undefined> {
     if (this.closed || starting.cancelled) return undefined;
     this.browser ??= chromium.launch({ ...(this.service.env.CHROMIUM_PATH ? { executablePath: this.service.env.CHROMIUM_PATH } : {}), headless: true, timeout: 10000, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-features=WebRtcHideLocalIpsWithMdns'] }).then((browser) => { browser.once('disconnected', () => { this.browser = undefined; }); return browser; }).catch((error: unknown) => { this.browser = undefined; throw error; });
     let context: BrowserContext | undefined;
     try {
       const browser = await this.browser; if (this.closed || starting.cancelled) return undefined;
-      context = await browser.newContext({ bypassCSP: true, extraHTTPHeaders: { 'x-highpass-relay': this.service.relaySecret, ...(seedGrant ? { 'x-highpass-seed': '1' } : {}) } });
+      context = await browser.newContext({ bypassCSP: true, extraHTTPHeaders: { 'x-highpass-relay': this.service.relaySecret, ...(seedGrant ? { 'x-highpass-seed': replica ? 'replica' : '1' } : {}) } });
       starting.context = context; if (this.closed || starting.cancelled) { await context.close(); return undefined; }
       await context.addCookies([{ name: 'HP_SESSION', value: token, domain: '127.0.0.1', path: '/api/iptv', httpOnly: true, secure: false, sameSite: 'Strict' }]);
       const page = await context.newPage(); const pending = new Map<string, Pending>();
@@ -65,7 +65,7 @@ export class RokuRelay {
       await page.addInitScript(`window.NativeSegments = { ready: function(){window.relayReady=true;}, complete: function(id,chunk,done){window.relayComplete(id,chunk,done);}, fallback: function(id){window.relayFallback(id);}, stats:function(raw){window.relayStats(raw);} };`);
       await page.goto(base + '/player/android-bridge.html', { timeout: 10000 });
       await page.waitForFunction(() => (window as unknown as { relayReady?: boolean }).relayReady === true, undefined, { timeout: 10000 });
-      const descriptor = await this.service.descriptor(seedGrant ?? id);
+      const descriptor = { ...await this.service.descriptor(seedGrant ?? id), ...(replica ? { seedRole: 'replica', transport: 'p2p', delivery: undefined } : {}) };
       if (this.closed || starting.cancelled) { await context.close(); return undefined; }
       await page.evaluate(({ value, seed }) => { const target = window as unknown as { HighpassBridge: { init(data: unknown, enabled: boolean, seed: boolean): void } }; target.HighpassBridge.init(value, true, seed); }, { value: descriptor, seed: Boolean(seedGrant) });
       if (this.closed || starting.cancelled) { await context.close(); return undefined; }
@@ -93,6 +93,7 @@ export class RokuRelay {
   async startSeed(key: string, grant: string, token: string, base: string) {
     return Boolean(await this.ensure(key, token, base, grant));
   }
+  async startReplica(key: string, grant: string, token: string, base: string) { return Boolean(await this.ensure(key, token, base, grant, true)); }
   async seedStatus(key: string, positions: number[]) {
     const relay = this.sessions.get(key); if (!relay) return undefined; relay.lastUsed = Date.now();
     return relay.page.evaluate((targets) => {

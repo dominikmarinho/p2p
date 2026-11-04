@@ -132,7 +132,7 @@ class PlayerActivity : ComponentActivity() {
                 else { loading.text = "${if (BuildConfig.TRANSPORT == "p2p") "Entrega P2P indisponível (sem HTTP)." else "Reprodução HTTP indisponível."}\nPressione OK para tentar novamente ou volte à biblioteca."; loading.visibility = View.VISIBLE; status.text = "Verifique a conexão ou escolha outro conteúdo"; playerView.showController() }
             }
         })
-        val source = MediaItem.Builder().setUri(Uri.parse(BuildConfig.ENGINE_URL + playback.getString("url"))).setMediaId(playback.getString("swarmId")).apply { if (playback.optBoolean("isHls")) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
+        val source = MediaItem.Builder().setUri(Uri.parse(BuildConfig.ENGINE_URL + playback.getString("url"))).setMediaId(playback.getString("swarmId")).apply { if (playback.optBoolean("isHls")) setMimeType(MimeTypes.APPLICATION_M3U8); if (playback.optBoolean("isLive")) setLiveConfiguration(MediaItem.LiveConfiguration.Builder().setMinPlaybackSpeed(.98f).setMaxPlaybackSpeed(1.02f).build()) }.build()
         engine.setMediaItem(source, if (playback.optBoolean("isLive")) C.TIME_UNSET else position.coerceAtLeast(0)); engine.prepare(); engine.playWhenReady = true; playerView.requestFocus(); loadGuide()
         handler.postDelayed(object : Runnable { override fun run() {
             if (stopped || player !== engine) return

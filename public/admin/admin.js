@@ -68,10 +68,10 @@ async function render() {
       content.append(panel);
       if (!state.streams.length) { content.append(element('div', 'Nenhuma reprodução P2P ativa nesta instância.', 'empty')); commit(); return; }
       const wrap = element('div', undefined, 'table-wrap'); const table = element('table'); const header = element('tr');
-      for (const title of ['Tipo', 'Conteúdo XUI', 'Players', 'Estado', 'HTTP recebido pelo seed', 'Enviado por P2P', 'Ações']) header.append(element('th', title)); table.append(header);
+      for (const title of ['Tipo', 'Conteúdo XUI', 'Players', 'Workers prontos', 'Estado', 'HTTP recebido pelo seed', 'Enviado por P2P', 'Ações']) header.append(element('th', title)); table.append(header);
       for (const seed of state.streams) {
-        const row = element('tr'); for (const value of [seed.kind, seed.content, seed.viewers, seed.ready ? 'Pronto' : 'Preparando / recuperando', `${(seed.originBytes / 1048576).toFixed(1)} MB`, `${(seed.p2pUploaded / 1048576).toFixed(1)} MB`]) row.append(element('td', String(value)));
-        const actions = element('td'); const restart = element('button', 'Reiniciar seed'); restart.onclick = async () => { if (!confirm('Reiniciar este seed? Os players podem usar HTTP durante a recuperação.')) return; try { await api(`seeds/${seed.swarm}/restart`, { method: 'POST' }); await render(); } catch (error) { $('notice').textContent = error.message; } }; actions.append(restart); row.append(actions); table.append(row);
+        const row = element('tr'); for (const value of [seed.kind, seed.content, seed.viewers, `${seed.readyWorkers ?? 0}/${seed.workerCount ?? 0}`, seed.ready ? 'Pronto' : 'Preparando / recuperando', `${(seed.originBytes / 1048576).toFixed(1)} MB`, `${(seed.p2pUploaded / 1048576).toFixed(1)} MB`]) row.append(element('td', String(value)));
+        const actions = element('td'); const restart = element('button', 'Reiniciar seed'); restart.onclick = async () => { if (!confirm('Reiniciar o alimentador da origem? Os workers de réplica continuarão servindo os segmentos já recebidos. Clientes somente P2P não usarão HTTP.')) return; try { await api(`seeds/${seed.swarm}/restart`, { method: 'POST' }); await render(); } catch (error) { $('notice').textContent = error.message; } }; actions.append(restart); row.append(actions); table.append(row);
       }
       wrap.append(table); content.append(wrap); commit(); return;
     }

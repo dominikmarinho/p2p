@@ -21,6 +21,8 @@ export function createMetrics() {
     auth: new Histogram({ ...common, name: 'xui_auth_duration_seconds', help: 'Tempo de validação XUI', labelNames: ['result'], buckets: [.01, .05, .1, .5, 1, 3, 5] }),
     seedActive: new Gauge({ ...common, name: 'p2p_seed_active_streams', help: 'Conteúdos com seed alocado' }),
     seedReady: new Gauge({ ...common, name: 'p2p_seed_ready_streams', help: 'Seeds com segmentos recentes disponíveis' }),
+    seedWorkers: new Gauge({ ...common, name: 'p2p_seed_workers', help: 'Workers de origem e replica alocados' }),
+    seedWorkersReady: new Gauge({ ...common, name: 'p2p_seed_ready_workers', help: 'Workers com segmentos disponiveis' }),
     seedViewers: new Gauge({ ...common, name: 'p2p_seed_viewers', help: 'Players com lease ativo no seed' }),
     seedOrigin: new Counter({ ...common, name: 'p2p_seed_origin_bytes_total', help: 'Payload HTTP recebido pelos seeds' }),
     seedUpload: new Counter({ ...common, name: 'p2p_seed_uploaded_bytes_total', help: 'Payload WebRTC enviado pelos seeds' }),

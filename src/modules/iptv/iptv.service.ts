@@ -186,7 +186,8 @@ export class IptvService {
   isRelayRequest(request: { headers: Record<string, unknown>; raw: { socket: { remoteAddress: string | undefined } } }) {
     return request.headers['x-highpass-relay'] === this.relaySecret && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.raw.socket.remoteAddress ?? '');
   }
-  isSeedRequest(request: Parameters<IptvService['isRelayRequest']>[0]) { return this.isRelayRequest(request) && request.headers['x-highpass-seed'] === '1'; }
+  isSeedRequest(request: Parameters<IptvService['isRelayRequest']>[0]) { return this.isRelayRequest(request) && ['1', 'replica'].includes(String(request.headers['x-highpass-seed'])); }
+  isReplicaRequest(request: Parameters<IptvService['isRelayRequest']>[0]) { return this.isRelayRequest(request) && request.headers['x-highpass-seed'] === 'replica'; }
   async recordHttp(grant: string, bytes: number) { if (bytes > 0) await this.redis.multi().hincrby(`highpass:traffic:${digest(grant)}`, 'httpDownloaded', bytes).expire(`highpass:traffic:${digest(grant)}`, 86400).exec(); }
   async traffic(grant: string) { const httpDownloaded = Number(await this.redis.hget(`highpass:traffic:${digest(grant)}`, 'httpDownloaded')) || 0; return { httpDownloaded, p2pDownloaded: 0, p2pUploaded: 0, peers: 0, totalDownloaded: httpDownloaded, httpPercentage: httpDownloaded ? 100 : 0, p2pPercentage: 0, transport: 'http', scope: 'engine-to-client' }; }
   resourceUrl(grantId: string, url: URL, kind: 'playlist' | 'segment' | 'key' = 'playlist') {
@@ -221,9 +222,17 @@ export class IptvService {
       const url = xuiTransportUrl(new URL(value), this.env); this.checkUpstream(url); return url;
     } catch (error) { if (error instanceof AppError && error.code === 'SEGMENT_EXPIRED') throw error; throw new AppError(400, 'MEDIA_RESOURCE', 'Recurso de mídia inválido'); }
   }
-  async rewriteManifest(text: string, base: URL, grantId: string, playlistIdentity: string): Promise<string> {
+  async rewriteManifest(text: string, base: URL, grantId: string, playlistIdentity: string, live = false): Promise<string> {
     const local = (value: string, kind: 'playlist' | 'segment' | 'key' = 'playlist') => this.resourceUrl(grantId, new URL(value, base), kind);
     const lines = text.split(/\r?\n/);
+    if (live && !text.includes('#EXT-X-ENDLIST')) {
+      const duration = Number(text.match(/^#EXT-X-TARGETDURATION:(\d+)/m)?.[1]);
+      if (Number.isFinite(duration) && duration > 0) {
+        const holdBack = duration * 4; const index = lines.findIndex((line) => line.startsWith('#EXT-X-SERVER-CONTROL:'));
+        if (index < 0) lines.splice(1, 0, `#EXT-X-SERVER-CONTROL:HOLD-BACK=${holdBack}`);
+        else { const attributes = lines[index]!.slice('#EXT-X-SERVER-CONTROL:'.length).split(',').filter((value) => !value.startsWith('HOLD-BACK=')); lines[index] = '#EXT-X-SERVER-CONTROL:' + [...attributes, `HOLD-BACK=${holdBack}`].join(','); }
+      }
+    }
     let sequence = Number(lines.find((line) => line.startsWith('#EXT-X-MEDIA-SEQUENCE:'))?.split(':')[1] ?? 0);
     const discontinuity = lines.find((line) => line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE:')) ?? '';
     const pipeline = this.redis.pipeline(); let media = false; let count = 0;

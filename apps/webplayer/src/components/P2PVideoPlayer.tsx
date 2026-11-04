@@ -5,6 +5,7 @@ import { absoluteUrl, trackerUrl, type Playback } from '../api';
 import type { CoreEventMap } from 'p2p-media-loader-core';
 import { PlaybackReporter } from '../p2p/telemetry';
 import { DeliveryPolicy } from '../p2p/delivery-policy';
+import { livePlaybackRate } from '../p2p/live-alignment';
 import { resilientP2P } from '../p2p/network-profile';
 import { initialStats, trackStats, trafficPercentages } from '../p2p/stats';
 
@@ -64,6 +65,12 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     else if (playback.isHls && Hls.isSupported()) boot();
     else if (strict) setError('P2P indisponível neste dispositivo. Use o cliente HTTP ou um dispositivo com WebRTC.');
     else { setNative(true); destroyStats = serverStats(); element.src = absoluteUrl(playback.url); void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); }
+    const alignment = setInterval(() => {
+      if (!playback.isLive || !hls || element.paused || element.seeking) return;
+      let buffered = 0;
+      for (let index = 0; index < element.buffered.length; index++) if (element.buffered.start(index) <= element.currentTime && element.buffered.end(index) >= element.currentTime) buffered = element.buffered.end(index) - element.currentTime;
+      element.playbackRate = livePlaybackRate(hls.latency, hls.targetLatency ?? 0, buffered, element.readyState < 3);
+    }, 2000);
     const recovery = setInterval(() => {
       if (!fileMode || !recoverFile || probing || closed) return; probing = true;
       void fetch(absoluteUrl(playback.url), { credentials: 'same-origin', signal: AbortSignal.timeout(5000) }).then(async (response) => {
@@ -71,7 +78,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
         const at = element.currentTime; carried = snapshot(); if (restorePosition) { element.removeEventListener('loadedmetadata', restorePosition); restorePosition = undefined; } boot(at);
       }).catch(() => undefined).finally(() => { probing = false; });
     }, 15000);
-    return () => { reporter.destroy(); closed = true; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
+    return () => { reporter.destroy(); closed = true; clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
   }, [playback, enabled]);
   const p2pDisplay = Math.round(stats.p2pPercentage * 10) / 10; const httpDisplay = stats.totalDownloaded > 0 ? 100 - p2pDisplay : 0;
   const active = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && !native && typeof RTCPeerConnection !== 'undefined';

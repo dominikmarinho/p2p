@@ -55,7 +55,7 @@
             "uid": "Prometheus"
           },
           "expr": "rate(process_cpu_user_seconds_total{job=\"fastify_p2p_app\"}[1m]) + rate(process_cpu_system_seconds_total{job=\"fastify_p2p_app\"}[1m])",
-          "legendFormat": "Uso de CPU · {{instance}}",
+          "legendFormat": "Uso de CPU \u00b7 {{instance}}",
           "refId": "A"
         }
       ],
@@ -96,7 +96,7 @@
             "uid": "Prometheus"
           },
           "expr": "process_resident_memory_bytes{job=\"fastify_p2p_app\"}",
-          "legendFormat": "RAM Resident (RSS) · {{instance}}",
+          "legendFormat": "RAM Resident (RSS) \u00b7 {{instance}}",
           "refId": "A"
         },
         {
@@ -105,11 +105,11 @@
             "uid": "Prometheus"
           },
           "expr": "nodejs_heap_size_used_bytes{job=\"fastify_p2p_app\"}",
-          "legendFormat": "RAM Heap Usada · {{instance}}",
+          "legendFormat": "RAM Heap Usada \u00b7 {{instance}}",
           "refId": "B"
         }
       ],
-      "title": "Consumo de Memória (RSS vs Heap)",
+      "title": "Consumo de Mem\u00f3ria (RSS vs Heap)",
       "type": "timeseries"
     },
     {
@@ -121,7 +121,7 @@
         "y": 8
       },
       "id": 4,
-      "title": "Métricas de Conexão WebSocket & Swarm P2P",
+      "title": "M\u00e9tricas de Conex\u00e3o WebSocket & Swarm P2P",
       "type": "row"
     },
     {
@@ -175,11 +175,11 @@
             "uid": "Prometheus"
           },
           "expr": "sum(websocket_active_connections{job=\"fastify_p2p_app\"})",
-          "legendFormat": "Conexões",
+          "legendFormat": "Conex\u00f5es",
           "refId": "A"
         }
       ],
-      "title": "Conexões WebSocket Ativas",
+      "title": "Conex\u00f5es WebSocket Ativas",
       "type": "stat"
     },
     {
@@ -229,7 +229,7 @@
           "refId": "B"
         }
       ],
-      "title": "Taxa de Mensagens P2P / Sinalização (msg/s)",
+      "title": "Taxa de Mensagens P2P / Sinaliza\u00e7\u00e3o (msg/s)",
       "type": "timeseries"
     },
     {
@@ -241,7 +241,7 @@
         "y": 15
       },
       "id": 7,
-      "title": "Tráfego HTTP da API Fastify",
+      "title": "Tr\u00e1fego HTTP da API Fastify",
       "type": "row"
     },
     {
@@ -281,7 +281,7 @@
           "refId": "A"
         }
       ],
-      "title": "Requisições HTTP por Status Code (RPS)",
+      "title": "Requisi\u00e7\u00f5es HTTP por Status Code (RPS)",
       "type": "timeseries"
     },
     {
@@ -318,7 +318,7 @@
             "uid": "Prometheus"
           },
           "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"fastify_p2p_app\"}[5m])) by (le))",
-          "legendFormat": "Latência p95",
+          "legendFormat": "Lat\u00eancia p95",
           "refId": "A"
         },
         {
@@ -327,17 +327,17 @@
             "uid": "Prometheus"
           },
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"fastify_p2p_app\"}[5m])) by (le))",
-          "legendFormat": "Latência p99",
+          "legendFormat": "Lat\u00eancia p99",
           "refId": "B"
         }
       ],
-      "title": "Latência das Respostas HTTP (Percentis p95 e p99)",
+      "title": "Lat\u00eancia das Respostas HTTP (Percentis p95 e p99)",
       "type": "timeseries"
     },
     {
       "id": 10,
       "type": "stat",
-      "title": "Instâncias saudáveis",
+      "title": "Inst\u00e2ncias saud\u00e1veis",
       "gridPos": {
         "h": 5,
         "w": 8,
@@ -362,7 +362,7 @@
     },
     {
       "id": 11,
-      "title": "Seeds permanentes · payload real do worker",
+      "title": "Seeds permanentes \u00b7 payload real do worker",
       "type": "row",
       "collapsed": false,
       "panels": [],
@@ -431,7 +431,7 @@
     },
     {
       "id": 13,
-      "title": "Ingestão HTTP e distribuição WebRTC dos seeds",
+      "title": "Ingest\u00e3o HTTP e distribui\u00e7\u00e3o WebRTC dos seeds",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -478,7 +478,7 @@
     },
     {
       "id": 14,
-      "title": "Diagnóstico de latência · origem versus API local",
+      "title": "Diagn\u00f3stico de lat\u00eancia \u00b7 origem versus API local",
       "type": "row",
       "collapsed": false,
       "panels": [],
@@ -491,7 +491,7 @@
     },
     {
       "id": 15,
-      "title": "XUI · tempo até headers p95 por tipo (inclui redirects)",
+      "title": "XUI \u00b7 tempo at\u00e9 headers p95 por tipo (inclui redirects)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -529,7 +529,7 @@
     },
     {
       "id": 16,
-      "title": "Falhas de origem por código",
+      "title": "Falhas de origem por c\u00f3digo",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -560,14 +560,14 @@
             "uid": "Prometheus"
           },
           "expr": "sum by (kind,code) (rate(xui_upstream_errors_total[5m]))",
-          "legendFormat": "{{kind}} · {{code}}",
+          "legendFormat": "{{kind}} \u00b7 {{code}}",
           "refId": "A"
         }
       ]
     },
     {
       "id": 17,
-      "title": "API local · p95 por rota (sem consultas ao XUI)",
+      "title": "API local \u00b7 p95 por rota (sem consultas ao XUI)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -652,7 +652,7 @@
     },
     {
       "id": 19,
-      "title": "Sondas externas HTTP/HTTPS · DNS, TLS, disponibilidade",
+      "title": "Sondas externas HTTP/HTTPS \u00b7 DNS, TLS, disponibilidade",
       "type": "row",
       "collapsed": false,
       "panels": [],
@@ -665,7 +665,7 @@
     },
     {
       "id": 20,
-      "title": "Disponibilidade pública e TCP da origem",
+      "title": "Disponibilidade p\u00fablica e TCP da origem",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -700,11 +700,11 @@
           "refId": "A"
         }
       ],
-      "description": "HTTP 200 nos serviços públicos; TCP na origem XUI, que exige autenticação na API."
+      "description": "HTTP 200 nos servi\u00e7os p\u00fablicos; TCP na origem XUI, que exige autentica\u00e7\u00e3o na API."
     },
     {
       "id": 21,
-      "title": "Duração das sondas por fase",
+      "title": "Dura\u00e7\u00e3o das sondas por fase",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -735,7 +735,7 @@
             "uid": "Prometheus"
           },
           "expr": "probe_http_duration_seconds{job=\"highpass_public_probe\"}",
-          "legendFormat": "{{instance}} · {{phase}}",
+          "legendFormat": "{{instance}} \u00b7 {{phase}}",
           "refId": "A"
         }
       ]
@@ -780,7 +780,7 @@
     },
     {
       "id": 23,
-      "title": "Sondas · tempo total",
+      "title": "Sondas \u00b7 tempo total",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -869,7 +869,7 @@
     },
     {
       "id": 26,
-      "title": "RAM disponível e total do host",
+      "title": "RAM dispon\u00edvel e total do host",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -900,7 +900,7 @@
             "uid": "Prometheus"
           },
           "expr": "node_memory_MemAvailable_bytes{job=\"highpass_host\"}",
-          "legendFormat": "Disponível",
+          "legendFormat": "Dispon\u00edvel",
           "refId": "A"
         },
         {
@@ -992,7 +992,7 @@
     },
     {
       "id": 29,
-      "title": "Rede física do host",
+      "title": "Rede f\u00edsica do host",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1032,14 +1032,14 @@
             "uid": "Prometheus"
           },
           "expr": "sum(rate(highpass_host_network_sent_total[2m]))",
-          "legendFormat": "Saída",
+          "legendFormat": "Sa\u00edda",
           "refId": "B"
         }
       ]
     },
     {
       "id": 30,
-      "title": "Disco disponível",
+      "title": "Disco dispon\u00edvel",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1070,7 +1070,7 @@
             "uid": "Prometheus"
           },
           "expr": "node_filesystem_avail_bytes{job=\"highpass_host\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}",
-          "legendFormat": "Disponível",
+          "legendFormat": "Dispon\u00edvel",
           "refId": "A"
         }
       ]
@@ -1115,7 +1115,7 @@
     },
     {
       "id": 32,
-      "title": "Pacotes descartados nas interfaces físicas",
+      "title": "Pacotes descartados nas interfaces f\u00edsicas",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1146,7 +1146,7 @@
             "uid": "Prometheus"
           },
           "expr": "sum(rate(highpass_host_network_receive_dropped_total[5m]))",
-          "legendFormat": "Recepção",
+          "legendFormat": "Recep\u00e7\u00e3o",
           "refId": "A"
         },
         {
@@ -1162,7 +1162,7 @@
     },
     {
       "id": 33,
-      "title": "Downloads reportados pelos players · HTTP/P2P",
+      "title": "Downloads reportados pelos players \u00b7 HTTP/P2P",
       "description": "Telemetria informada pelos clientes, sem auditoria de faturamento. Pode incluir prefetch.",
       "type": "timeseries",
       "datasource": {
@@ -1188,7 +1188,7 @@
             "uid": "Prometheus"
           },
           "expr": "sum by (transport,client) (rate(player_reported_download_bytes_total[2m]))",
-          "legendFormat": "{{client}} · {{transport}}",
+          "legendFormat": "{{client}} \u00b7 {{transport}}",
           "refId": "A"
         }
       ]
@@ -1254,14 +1254,14 @@
             "uid": "Prometheus"
           },
           "expr": "sum by (client,code) (rate(player_reported_errors_total[5m]))",
-          "legendFormat": "{{client}} · {{code}}",
+          "legendFormat": "{{client}} \u00b7 {{code}}",
           "refId": "A"
         }
       ]
     },
     {
       "id": 36,
-      "title": "Participação P2P nos downloads reportados",
+      "title": "Participa\u00e7\u00e3o P2P nos downloads reportados",
       "description": "Telemetria informada pelos clientes, sem auditoria de faturamento. Pode incluir prefetch.",
       "type": "timeseries",
       "datasource": {
@@ -1294,8 +1294,8 @@
     },
     {
       "id": 37,
-      "title": "HLS · aberturas iniciais e recargas de sessão",
-      "description": "A URL inicial autentica e pode abrir uma sessão no XUI. Recargas reutilizam essa sessão. Segmentos normais não equivalem a novos espectadores.",
+      "title": "HLS \u00b7 aberturas iniciais e recargas de sess\u00e3o",
+      "description": "A URL inicial autentica e pode abrir uma sess\u00e3o no XUI. Recargas reutilizam essa sess\u00e3o. Segmentos normais n\u00e3o equivalem a novos espectadores.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1329,7 +1329,7 @@
             "uid": "Prometheus"
           },
           "expr": "sum(rate(xui_hls_playlist_reloads_total[5m]))",
-          "legendFormat": "Recargas da sessão",
+          "legendFormat": "Recargas da sess\u00e3o",
           "refId": "B"
         }
       ]
@@ -1337,7 +1337,7 @@
     {
       "id": 38,
       "title": "Contextos HLS e buscas pendentes na engine",
-      "description": "Contextos mantidos até o prazo de inatividade; não equivale à contagem de conexões TCP nem à tabela Live Connections do XUI.",
+      "description": "Contextos mantidos at\u00e9 o prazo de inatividade; n\u00e3o equivale \u00e0 contagem de conex\u00f5es TCP nem \u00e0 tabela Live Connections do XUI.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1378,8 +1378,8 @@
     },
     {
       "id": 39,
-      "title": "Cache de mídia compartilhado",
-      "description": "Cache de mídia com limite de memória por processo; usado pelo seed e pelo HTTP de contingência.",
+      "title": "Cache de m\u00eddia compartilhado",
+      "description": "Cache de m\u00eddia com limite de mem\u00f3ria por processo; usado pelo seed e pelo HTTP de conting\u00eancia.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1412,7 +1412,7 @@
     {
       "id": 40,
       "title": "Buscas de origem evitadas pelo cache",
-      "description": "Um pedido concorrente compartilha a mesma busca em andamento. Os dados de origem preservam autenticação e isolamento da linha.",
+      "description": "Um pedido concorrente compartilha a mesma busca em andamento. Os dados de origem preservam autentica\u00e7\u00e3o e isolamento da linha.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1450,6 +1450,86 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "Workers de seed alocados",
+      "gridPos": {
+        "x": 0,
+        "y": 123,
+        "w": 12,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(p2p_seed_workers)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Workers de seed prontos",
+      "gridPos": {
+        "x": 12,
+        "y": 123,
+        "w": 12,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(p2p_seed_ready_workers)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
     }
   ],
   "refresh": "5s",
@@ -1468,5 +1548,5 @@
   "timezone": "browser",
   "title": "Fastify P2P Engine - Dashboard",
   "uid": "fastify-p2p-dashboard",
-  "version": 4
+  "version": 5
 }

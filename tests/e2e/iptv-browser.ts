@@ -67,7 +67,7 @@ try {
   const target = urls[targetIndex]; assert.ok(target);
   await native.evaluate(({ playback, playlist, manifestUrl }) => { (window as BridgeWindow).HighpassBridge.init(playback, true); (window as BridgeWindow).HighpassBridge.playlist(manifestUrl, playlist); }, { playback: descriptor, playlist: manifest, manifestUrl: address + descriptor.url });
   await native.route('**/api/iptv/media/**', async (route) => { await new Promise<void>((resolve) => setTimeout(resolve, 1500)); await route.abort(); });
-  await native.evaluate((url) => (window as BridgeWindow).HighpassBridge.load('warm', url, 0, -1), address + urls[0]);
+  await native.evaluate((url) => (window as BridgeWindow).HighpassBridge.load('warm', url, 0, -1), address + target);
   await native.waitForFunction(() => { const state = (window as unknown as { testNative: { stats: { p2pDownloaded: number } } }).testNative; return state.stats.p2pDownloaded > 0; }, undefined, { timeout: 35000 });
   await native.evaluate((url) => { const state = (window as unknown as { testNative: { activeId: string; done: boolean; fallback: boolean; chunks: string[] } }).testNative; state.activeId = 'target'; state.done = false; state.fallback = false; state.chunks = []; (window as BridgeWindow).HighpassBridge.load('target', url, 0, -1); }, address + target);
   await native.waitForFunction(() => (window as unknown as { testNative: { done: boolean } }).testNative.done, undefined, { timeout: 20000 });

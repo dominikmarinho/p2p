@@ -38,3 +38,13 @@ Web e ponte Android compartilham o perfil WebRTC: mensagens de 16 KiB, timeout s
 Mesmo canal e mesma variante devem compartilhar o swarm. A reprodução em dois aparelhos não sincroniza automaticamente o relógio do vídeo. Limites de conexões continuam sendo os definidos pelo XUI. O teste de regressão mantém Web e ponte Android na mesma conta, confirma dois peers e confirma entrega de segmentos sem HTTP.
 
 TURN é verificado por transferência real via UDP, TCP e TLS, não apenas pela abertura da porta. O teste no servidor não substitui a validação no aparelho e na operadora 5G.
+
+## Redundância e alinhamento — 1.3.0
+
+`P2P_SEED_WORKERS=2` cria um alimentador e uma réplica por conteúdo (máximo 3 workers, configurável). A réplica recebe os segmentos via WebRTC e o servidor recusa requisições HTTP de vídeo desse worker. Playlists e chaves HLS continuam usando HTTP. A ingestão de vídeo do XUI fica no alimentador; VOD mantém um único job de remux por conteúdo. Réplicas conservam segmentos em memória para cobrir o reinício do alimentador, que é recuperado automaticamente. Isso não sustenta novos segmentos durante uma indisponibilidade prolongada da própria origem.
+
+Os workers usam contextos separados no Chromium do servidor atual. Protegem contra falha/reinício de um worker; não são redundância entre servidores ou contra queda do host/Chromium. Adicionar hosts independentes requer provisionamento e descoberta distribuída de workers, ainda não implantados. Todos os workers cessam quando não há espectadores, respeitando a política de não manter sessões XUI abertas sem consumo.
+
+No ao vivo a API anuncia `HOLD-BACK` de quatro segmentos. WebPlayer e Media3 usam a mesma referência de atraso; a interface Web corrige até 2% da velocidade somente com pelo menos 12 segundos de vídeo em buffer. Não há seeks para corrigir pequenas diferenças. Android limita o ajuste de velocidade entre 0,98 e 1,02 e mantém o buffer de rede móvel. Não se aplica sincronização a filmes, séries ou posição escolhida pelo usuário. As janelas de playlists variam por canal: não há garantia de reprodução quadro a quadro entre aparelhos.
+
+O painel informa workers prontos/alocados por conteúdo e o Grafana possui gauges de workers. O teste de redundância desliga o alimentador, inicia um receptor sem cache, recebe vídeo somente da réplica, confirma ausência de novas buscas de vídeo na origem, recupera o alimentador e encerra todos os workers ao sair.

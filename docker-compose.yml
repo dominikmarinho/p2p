@@ -2,6 +2,7 @@ name: highpass-local
 x-app-environment: &app-environment
   P2P_SEED_ENABLED: ${P2P_SEED_ENABLED:-true}
   P2P_DELIVERY_ENABLED: ${P2P_DELIVERY_ENABLED:-true}
+  P2P_SEED_WORKERS: ${P2P_SEED_WORKERS:-2}
   P2P_SEED_MAX_STREAMS: ${P2P_SEED_MAX_STREAMS:-4}
   NODE_ENV: development
   DATABASE_URL: postgresql://${POSTGRES_USER:-highpass_user}:${POSTGRES_PASSWORD:-local_postgres_only}@postgres:5432/${POSTGRES_DB:-highpass_db}

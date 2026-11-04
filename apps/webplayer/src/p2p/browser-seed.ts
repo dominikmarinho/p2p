@@ -72,7 +72,7 @@ export class BrowserSeed {
           const index = segments.findIndex((segment) => segment.endTime > position);
           if (index >= 0) for (let next = index; next < Math.min(segments.length, index + 3); next++) selected.add(next);
         }
-        if (this.playback.isLive) for (let index = Math.max(0, segments.length - 4); index < segments.length; index++) selected.add(index);
+        if (this.playback.isLive) for (let index = Math.max(0, segments.length - 6); index < segments.length; index++) selected.add(index);
         for (const index of [...selected].slice(0, 24)) {
           if (this.closed || this.paused) break;
           const segment = segments[index]; if (!segment) continue;

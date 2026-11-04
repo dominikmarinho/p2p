@@ -29,6 +29,7 @@ const environmentSchema = z.object({
   P2P_RELAY_MAX_SESSIONS: integer(4, 32),
   P2P_SEED_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   P2P_DELIVERY_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  P2P_SEED_WORKERS: integer(2, 3),
   P2P_SEED_MAX_STREAMS: integer(4, 16),
   P2P_SEGMENT_TIMEOUT_MS: integer(3000, 10000),
   TURN_URLS: z.string().default(''),

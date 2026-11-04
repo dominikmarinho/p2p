@@ -22,7 +22,7 @@ await execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', join(folde
 const manifest = (offset: number) => '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:' + offset + '\n' + Array.from({ length: 8 }, (_, index) => `#EXTINF:4.000,\nchunk${index + offset}.ts\n`).join('');
 await writeFile(join(folder, 'index.m3u8'), manifest(0));
 const source = xuiFixture(folder, 1); const origin = await source.listen({ host: '127.0.0.1', port: 0 });
-const app = buildApp(loadEnvironment({ ...process.env, XUI_BASE_URL: origin, XUI_ALLOW_HTTP: 'true', P2P_DELIVERY_ENABLED: 'true', P2P_SEED_ENABLED: 'true', RTC_ICE_SERVERS: '[]', VOD_CACHE_DIR: folder, RATE_LIMIT_MAX: '10000', RATE_LIMIT_NAMESPACE: `seed-proof:${randomUUID()}:` }));
+const app = buildApp(loadEnvironment({ ...process.env, XUI_BASE_URL: origin, XUI_ALLOW_HTTP: 'true', P2P_DELIVERY_ENABLED: 'true', P2P_SEED_ENABLED: 'true', P2P_SEED_WORKERS: '1', RTC_ICE_SERVERS: '[]', VOD_CACHE_DIR: folder, RATE_LIMIT_MAX: '10000', RATE_LIMIT_NAMESPACE: `seed-proof:${randomUUID()}:` }));
 const address = await app.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'] });
 const admin = { 'x-api-key': 'local-admin-key-change-before-production' };

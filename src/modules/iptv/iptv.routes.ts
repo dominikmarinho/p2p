@@ -89,7 +89,7 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     const { grant, resource } = request.params;
     const permission = await service.grant(grant);
     if (digest(clientToken(request)) !== permission.sessionHash) throw new AppError(401, 'MEDIA_OWNER', 'Mídia pertence a outra sessão');
-    if (permission.transport === 'p2p' && !service.isRelayRequest(request) && service.resourceKind(grant, resource) === 'segment') throw new AppError(403, 'P2P_ONLY', 'Este cliente recebe vídeo exclusivamente pela rede P2P');
+    if (((permission.transport === 'p2p' && !service.isRelayRequest(request)) || service.isReplicaRequest(request)) && service.resourceKind(grant, resource) === 'segment') throw new AppError(403, 'P2P_ONLY', 'Este cliente recebe vídeo exclusivamente pela rede P2P');
     const upstream = await service.resource(grant, resource);
     const address = app.server.address(); const base = address && typeof address !== 'string' ? `http://127.0.0.1:${address.port}` : '';
     const gateway = permission.relay && !service.isRelayRequest(request);
@@ -110,11 +110,11 @@ export function iptvRoutes(app: FastifyInstance, service: IptvService, relay: Ro
     if (/mpegurl/i.test(contentType) || new URL(response.url || upstream.href).pathname.endsWith('.m3u8')) {
       const text = await readBounded(response, 1024 * 1024);
       if (!text.trimStart().startsWith('#EXTM3U')) throw new AppError(502, 'HLS_FORMAT', 'A origem não retornou uma playlist HLS');
-      const manifest = await service.rewriteManifest(text, new URL(response.url || upstream.href), grant, resource);
+      const manifest = await service.rewriteManifest(text, new URL(response.url || upstream.href), grant, resource, permission.kind === 'live');
       if (gateway) await relay.observe(grant, clientToken(request), base, request.url, manifest);
       return reply.type('application/vnd.apple.mpegurl').send(manifest);
     }
-    if (permission.transport === 'p2p' && !service.isRelayRequest(request) && service.resourceKind(grant, resource) !== 'key') { await response.body?.cancel(); throw new AppError(403, 'P2P_ONLY', 'Este cliente recebe vídeo exclusivamente pela rede P2P'); }
+    if (((permission.transport === 'p2p' && !service.isRelayRequest(request)) || service.isReplicaRequest(request)) && service.resourceKind(grant, resource) !== 'key') { await response.body?.cancel(); throw new AppError(403, 'P2P_ONLY', 'Este cliente recebe vídeo exclusivamente pela rede P2P'); }
     for (const name of ['content-length', 'content-range', 'accept-ranges']) { const value = response.headers.get(name); if (value) reply.header(name, value); }
     if (!response.body) return reply.code(502).send();
     return reply.code(response.status).type(contentType).send(Readable.from(bodyChunks(response.body, async (bytes) => { if (!service.isRelayRequest(request)) { await service.recordHttp(grant, bytes); if (gateway) relay.http(grant, bytes); } })));

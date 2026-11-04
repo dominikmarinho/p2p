@@ -97,6 +97,7 @@ highpass-p2p-engine/
 │       │   │   ├── android-bridge.ts
 │       │   │   ├── browser-seed.ts
 │       │   │   ├── delivery-policy.ts
+│       │   │   ├── live-alignment.ts
 │       │   │   ├── native-core.ts
 │       │   │   ├── network-profile.ts
 │       │   │   ├── seed-storage.ts
@@ -260,6 +261,7 @@ highpass-p2p-engine/
 │   │   ├── native-vod-seek.ts
 │   │   ├── seed-delivery.ts
 │   │   ├── seed-lifecycle.ts
+│   │   ├── seed-redundancy.ts
 │   │   └── vod-relay.ts
 │   ├── helpers/
 │   │   └── xui-fixture.ts
@@ -279,6 +281,8 @@ highpass-p2p-engine/
 │       ├── browser-seed.test.ts
 │       ├── control-plane.test.ts
 │       ├── delivery-policy.test.ts
+│       ├── live-alignment.test.ts
+│       ├── live-manifest.test.ts
 │       ├── origin-media.test.ts
 │       ├── playback-presence.test.ts
 │       ├── resources.test.ts

@@ -9,7 +9,8 @@ import { digest } from '../../lib/secrets.js';
 import { AppError } from '../../lib/errors.js';
 
 interface Viewer { token: string; lastSeen: number; position: number }
-interface Seed { warmPositions: number[]; revision: number; key: string; swarm: string; kind: string; content: string; owner: string; ownerToken: string; base: string; viewers: Map<string, Viewer>; idleSince: number; retryAt: number; ready: boolean; lastSegmentAt: number; originBytes: number; uploaded: number }
+interface WorkerState { key: string; role: 'origin' | 'replica'; ready: boolean; originBytes: number; uploaded: number }
+interface Seed { workers: WorkerState[]; warmPositions: number[]; revision: number; key: string; swarm: string; kind: string; content: string; owner: string; ownerToken: string; base: string; viewers: Map<string, Viewer>; idleSince: number; retryAt: number; ready: boolean; lastSegmentAt: number; originBytes: number; uploaded: number }
 export class SeedManager {
   private readonly entries = new Map<string, Seed>();
   private readonly timer: NodeJS.Timeout;
@@ -19,9 +20,11 @@ export class SeedManager {
   constructor(private readonly service: IptvService, private readonly relay: RokuRelay, private readonly metrics: Metrics) {
     this.timer = setInterval(() => { void this.tick(); }, 1000); this.timer.unref();
   }
-  async close() { this.closed = true; clearInterval(this.timer); await Promise.allSettled([...this.entries.values()].map((seed) => this.relay.stopSeed(seed.key))); this.entries.clear(); this.released.clear(); }
+  private keys(seed: Seed) { return [seed.key, ...Array.from({ length: Math.max(0, (this.service.env.P2P_SEED_WORKERS ?? 1) - 1) }, (_, index) => `${seed.key}:replica:${index + 1}`)]; }
+  private stopGroup(seed: Seed) { return Promise.allSettled(this.keys(seed).map((key) => this.relay.stopSeed(key))); }
+  async close() { this.closed = true; clearInterval(this.timer); await Promise.allSettled([...this.entries.values()].map((seed) => this.stopGroup(seed))); this.entries.clear(); this.released.clear(); }
   snapshot() {
-    return { enabled: this.service.env.P2P_SEED_ENABLED, active: this.entries.size, ready: [...this.entries.values()].filter((seed) => seed.ready).length, streams: [...this.entries.values()].map((seed) => ({ swarm: seed.swarm, kind: seed.kind, content: seed.content, viewers: seed.viewers.size, ready: seed.ready, warmPositions: seed.warmPositions, lastSegmentAt: seed.lastSegmentAt, originBytes: seed.originBytes, p2pUploaded: seed.uploaded })) };
+    return { configuredWorkers: this.service.env.P2P_SEED_WORKERS ?? 1, workers: [...this.entries.values()].reduce((sum, seed) => sum + seed.workers.length, 0), readyWorkers: [...this.entries.values()].reduce((sum, seed) => sum + seed.workers.filter((worker) => worker.ready).length, 0), enabled: this.service.env.P2P_SEED_ENABLED, active: this.entries.size, ready: [...this.entries.values()].filter((seed) => seed.ready).length, streams: [...this.entries.values()].map((seed) => ({ workers: seed.workers, workerCount: seed.workers.length, readyWorkers: seed.workers.filter((worker) => worker.ready).length, swarm: seed.swarm, kind: seed.kind, content: seed.content, viewers: seed.viewers.size, ready: seed.ready, warmPositions: seed.warmPositions, lastSegmentAt: seed.lastSegmentAt, originBytes: seed.originBytes, p2pUploaded: seed.uploaded })) };
   }
   /** A grant is a playback lease, not a permanent subscription to the origin. */
   async detach(id: string) {
@@ -33,14 +36,16 @@ export class SeedManager {
       if (!seed.viewers.delete(id)) continue;
       if (!seed.viewers.size) {
         seed.revision++; seed.ready = false; this.entries.delete(seed.swarm);
-        await this.relay.stopSeed(seed.key);
+        await this.stopGroup(seed);
       }
       return;
     }
   }
   async restart(swarm: string, delay = 5000) {
     const seed = this.entries.get(swarm); if (!seed) throw new AppError(404, 'SEED_NOT_FOUND', 'Seed não encontrado');
-    seed.revision++; seed.retryAt = Date.now() + delay; seed.ready = false; seed.warmPositions = []; seed.originBytes = 0; seed.uploaded = 0;
+    seed.revision++; seed.retryAt = Date.now() + delay; seed.ready = seed.workers.some((worker) => worker.role === 'replica' && worker.ready);
+    seed.workers = seed.workers.map((worker) => worker.role === 'origin' ? { ...worker, ready: false, originBytes: 0, uploaded: 0 } : worker);
+    seed.originBytes = 0; seed.uploaded = seed.workers.reduce((sum, worker) => sum + worker.uploaded, 0);
     await this.relay.stopSeed(seed.key);
     return { ok: true };
   }
@@ -52,29 +57,43 @@ export class SeedManager {
         for (const [grant, viewer] of seed.viewers) if (Date.now() - viewer.lastSeen > 15000) seed.viewers.delete(grant);
         if (!seed.viewers.size) {
           seed.revision++; seed.ready = false; this.entries.delete(seed.swarm);
-          await this.relay.stopSeed(seed.key); return;
+          await this.stopGroup(seed); return;
         }
         seed.idleSince = 0;
-        if (Date.now() < seed.retryAt) return;
+        if (Date.now() < seed.retryAt) { for (const key of this.keys(seed).slice(1)) await this.relay.seedStatus(key, [...seed.viewers.values()].map((viewer) => viewer.position)); return; }
         let ownerToken = seed.ownerToken;
         try { await this.service.grant(seed.owner); ownerToken = seed.viewers.get(seed.owner)?.token ?? seed.ownerToken; }
         catch {
           seed.viewers.delete(seed.owner); const next = seed.viewers.entries().next().value;
-          if (!next) { seed.ready = false; this.entries.delete(seed.swarm); await this.relay.stopSeed(seed.key); return; }
+          if (!next) { seed.ready = false; this.entries.delete(seed.swarm); await this.stopGroup(seed); return; }
           seed.owner = next[0]; ownerToken = next[1].token; seed.ownerToken = ownerToken;
-          await this.relay.stopSeed(seed.key); seed.originBytes = 0; seed.uploaded = 0;
+          await this.stopGroup(seed); seed.originBytes = 0; seed.uploaded = 0;
         }
         if (this.entries.get(seed.swarm) !== seed) return;
-        if (!await this.relay.startSeed(seed.key, seed.owner, ownerToken, seed.base)) { seed.ready = false; seed.retryAt = Date.now() + 5000; return; }
-        if (this.entries.get(seed.swarm) !== seed) { await this.relay.stopSeed(seed.key); return; }
+        if (!await this.relay.startSeed(seed.key, seed.owner, ownerToken, seed.base)) { seed.ready = seed.workers.some((worker) => worker.role === 'replica' && worker.ready); seed.retryAt = Date.now() + 5000; return; }
+        if (this.entries.get(seed.swarm) !== seed) { await this.stopGroup(seed); return; }
         const positions = [...seed.viewers.values()].sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 32).map((viewer) => viewer.position);
         const status = await this.relay.seedStatus(seed.key, positions); if (revision !== seed.revision || this.entries.get(seed.swarm) !== seed) return; seed.ready = Boolean(status?.ready); seed.lastSegmentAt = status?.lastSegmentAt ?? 0; seed.warmPositions = status?.positions ?? [];
-        const traffic = this.relay.stats(seed.key);
-        if (traffic) {
-          this.metrics.seedOrigin.inc(Math.max(0, traffic.httpDownloaded - seed.originBytes)); this.metrics.seedUpload.inc(Math.max(0, traffic.p2pUploaded - seed.uploaded));
-          seed.originBytes = traffic.httpDownloaded; seed.uploaded = traffic.p2pUploaded;
+        const workers: WorkerState[] = [];
+        const primary = this.relay.stats(seed.key);
+        workers.push({ key: seed.key, role: 'origin', ready: Boolean(status?.ready), originBytes: primary?.httpDownloaded ?? 0, uploaded: primary?.p2pUploaded ?? 0 });
+        for (const key of this.keys(seed).slice(1)) {
+          // Replica content is filled solely through WebRTC; only manifests use HTTP.
+          if (status?.ready || seed.workers.some((worker) => worker.key === key)) await this.relay.startReplica(key, seed.owner, ownerToken, seed.base);
+          const replica = await this.relay.seedStatus(key, positions);
+          const traffic = this.relay.stats(key);
+          workers.push({ key, role: 'replica', ready: Boolean(replica?.ready), originBytes: traffic?.httpDownloaded ?? 0, uploaded: traffic?.p2pUploaded ?? 0 });
         }
+        if (revision !== seed.revision || this.entries.get(seed.swarm) !== seed) { if (!this.entries.has(seed.swarm)) await this.stopGroup(seed); return; }
+        seed.workers = workers; seed.ready = workers.some((worker) => worker.ready);
+        const uploaded = workers.reduce((sum, worker) => sum + worker.uploaded, 0);
+        if (primary) this.metrics.seedOrigin.inc(Math.max(0, primary.httpDownloaded - seed.originBytes));
+        this.metrics.seedUpload.inc(Math.max(0, uploaded - seed.uploaded));
+        seed.originBytes = primary?.httpDownloaded ?? 0; seed.uploaded = uploaded;
+
       }));
+      this.metrics.seedWorkers?.set([...this.entries.values()].reduce((sum, seed) => sum + seed.workers.length, 0));
+      this.metrics.seedWorkersReady?.set([...this.entries.values()].reduce((sum, seed) => sum + seed.workers.filter((worker) => worker.ready).length, 0));
       this.metrics.seedActive.set(this.entries.size); this.metrics.seedReady.set([...this.entries.values()].filter((seed) => seed.ready).length); this.metrics.seedViewers.set([...this.entries.values()].reduce((sum, seed) => sum + seed.viewers.size, 0));
     } finally { this.running = false; }
   }
@@ -93,11 +112,11 @@ export class SeedManager {
       for (const entry of this.entries.values()) for (const [key, viewer] of entry.viewers) if (Date.now() - viewer.lastSeen > 15000) entry.viewers.delete(key);
       if (this.entries.size >= this.service.env.P2P_SEED_MAX_STREAMS) {
         const idle = [...this.entries.values()].filter((entry) => !entry.viewers.size).sort((a, b) => a.idleSince - b.idleSince)[0];
-        if (idle) { this.entries.delete(idle.swarm); await this.relay.stopSeed(idle.key); }
+        if (idle) { this.entries.delete(idle.swarm); await this.stopGroup(idle); }
       }
       if (this.entries.size >= this.service.env.P2P_SEED_MAX_STREAMS) return { state: 'unavailable', reason: 'capacity' };
       const address = app.server.address(); if (!address || typeof address === 'string') return { state: 'unavailable', reason: 'not-listening' };
-      seed = { warmPositions: [], revision: 0, key: `seed:${grant.swarmId}`, swarm: grant.swarmId, kind: grant.kind, content: grant.id, owner: id, ownerToken: token, base: `http://127.0.0.1:${address.port}`, viewers: new Map(), idleSince: 0, retryAt: 0, ready: false, lastSegmentAt: 0, originBytes: 0, uploaded: 0 }; this.entries.set(grant.swarmId, seed);
+      seed = { workers: [], warmPositions: [], revision: 0, key: `seed:${grant.swarmId}`, swarm: grant.swarmId, kind: grant.kind, content: grant.id, owner: id, ownerToken: token, base: `http://127.0.0.1:${address.port}`, viewers: new Map(), idleSince: 0, retryAt: 0, ready: false, lastSegmentAt: 0, originBytes: 0, uploaded: 0 }; this.entries.set(grant.swarmId, seed);
     }
     if (seed.viewers.size < 256 || seed.viewers.has(id)) seed.viewers.set(id, { token, position, lastSeen: Date.now() });
     void this.tick(); return { state: seed.ready ? 'ready' : 'warming', viewers: seed.viewers.size };
