@@ -5,6 +5,7 @@ import { absoluteUrl, trackerUrl, type Playback } from '../api';
 import type { CoreEventMap } from 'p2p-media-loader-core';
 import { PlaybackReporter } from '../p2p/telemetry';
 import { DeliveryPolicy } from '../p2p/delivery-policy';
+import { resilientP2P } from '../p2p/network-profile';
 import { initialStats, trackStats, trafficPercentages } from '../p2p/stats';
 
 export function formatBytes(value: number): string { if (value < 1024) return `${Math.round(value)} B`; if (value >= 1073741824) return `${(value / 1073741824).toFixed(2)} GB`; if (value < 1048576) return `${(value / 1024).toFixed(1)} KB`; return `${(value / 1048576).toFixed(1)} MB`; }
@@ -34,7 +35,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       if (closed) return;
       fileMode = false; recoverFile = false; setError(''); setNative(!p2pEnabled); policy?.reset(); destroyStats();
       const HlsWithP2P = HlsJsP2PEngine.injectMixin(Hls);
-      const instance = new HlsWithP2P({ enableWorker: true, startPosition: position, maxBufferLength: playback.config?.bufferSeconds ?? 20, backBufferLength: 15, p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: p2pEnabled && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, p2pDownloadTimeWindow: 120, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
+      const instance = new HlsWithP2P({ enableWorker: true, startPosition: position, maxBufferLength: strict ? Math.max(45, playback.config?.bufferSeconds ?? 0) : playback.config?.bufferSeconds ?? 20, backBufferLength: 30, ...(strict ? { liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 8, maxLiveSyncPlaybackRate: 1, fragLoadPolicy: { default: { maxTimeToFirstByteMs: 25000, maxLoadTimeMs: 45000, timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 }, errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 } } } } : {}), p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: p2pEnabled && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, ...resilientP2P, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
       hls = instance; updateHttp = (allowed) => { instance.p2pEngine.applyDynamicConfig({ core: { simultaneousHttpDownloads: allowed ? 1 : 0 } });  };
       const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') policy?.recovered(segment.url); };
       instance.p2pEngine.addEventListener('onSegmentLoaded', downloaded);

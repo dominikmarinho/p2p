@@ -30,3 +30,11 @@ Os APKs estão em `apps/android/app/build/outputs/apk/http/release/` e `p2p/rele
 ## Disponibilidade
 
 P2P exige navegador com MediaSource/WebRTC, rede compatível com ICE/TURN, origem e seed operacionais. Quando indisponível, este cliente aguarda/informa erro; não troca para HTTP. Use explicitamente o cliente HTTP se desejar transmissão convencional. Os wrappers Samsung/LG abrem o cliente HTTP; Roku mantém o gateway HTTP, pois não suporta WebRTC nativo.
+
+## Estabilidade 1.2.1
+
+Web e ponte Android compartilham o perfil WebRTC: mensagens de 16 KiB, timeout sem bytes de 10 segundos (anteriormente 2), ICE com mais tempo e janela de prefetch de 60 segundos. O Android P2P aguarda até 45 segundos no Core e 47 na ponte nativa, sem baixar o segmento por HTTP. O buffer Android P2P passa a 30–60 segundos, com 2,5 segundos para iniciar e 6 para retomar após interrupção. A interface Web mantém ao menos 45 segundos de buffer desejado e quatro segmentos de distância do ao vivo. Esses valores aumentam a tolerância à variação da rede; não garantem estabilidade se a velocidade ficar abaixo do bitrate do canal.
+
+Mesmo canal e mesma variante devem compartilhar o swarm. A reprodução em dois aparelhos não sincroniza automaticamente o relógio do vídeo. Limites de conexões continuam sendo os definidos pelo XUI. O teste de regressão mantém Web e ponte Android na mesma conta, confirma dois peers e confirma entrega de segmentos sem HTTP.
+
+TURN é verificado por transferência real via UDP, TCP e TLS, não apenas pela abertura da porta. O teste no servidor não substitui a validação no aparelho e na operadora 5G.

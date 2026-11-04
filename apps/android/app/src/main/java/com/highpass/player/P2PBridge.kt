@@ -106,7 +106,7 @@ class P2PBridge(activity: Activity, playback: JSONObject, authToken: String, req
         if (closed) { requests.remove(id); return null }
         return try {
             handler.post { if (!closed) webView.evaluateJavascript("window.HighpassBridge.load(${JSONObject.quote(id)},${JSONObject.quote(uri)},$position,$length)", null) else request.future.complete(null) }
-            request.future.get(14, TimeUnit.SECONDS)
+            request.future.get(if (BuildConfig.TRANSPORT == "p2p") 47 else 14, TimeUnit.SECONDS)
         } catch (_: Exception) { null } finally { requests.remove(id) }
     }
     fun playlist(uri: String, text: String) {

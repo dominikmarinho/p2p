@@ -9,6 +9,7 @@ import { chromium } from 'playwright';
 import { xuiFixture } from '../helpers/xui-fixture.js';
 import { buildApp } from '../../src/app.js';
 import { loadEnvironment } from '../../src/config/env.js';
+import type { AndroidBridgeApi } from '../../apps/webplayer/src/p2p/android-bridge.js';
 import type { Playback } from '../../apps/webplayer/src/api.js';
 if (process.env.NODE_ENV !== 'test') throw new Error('NODE_ENV=test obrigatório');
 const folder = await mkdtemp(join(tmpdir(), 'highpass-isolated-'));
@@ -52,7 +53,27 @@ try {
   await screen.waitForFunction(() => Number(document.querySelector('[data-testid="p2p-percentage"]')?.textContent?.replace('%', '')) > 99);
   assert.equal(downloadedHttpVideo, 0); assert.equal(await screen.getByTestId('http-percentage').textContent(), '0.0%');
   console.log(`P2P isolado: primeiro vídeo decodificado em ${Date.now() - started} ms, 100% P2P e zero respostas HTTP de vídeo`);
-  await p2p.close();
+  // The Android bridge joins the already playing WebPlayer under the same account.
+  const android = await browser.newContext();
+  await android.request.post(address + '/api/iptv/login', { data: { username: 'bob', password: 'secret-line' } });
+  const bridge = await android.newPage();
+  bridge.on('pageerror', (error) => console.log('bridge error', error.message));
+  bridge.on('console', (message) => { if (message.type() === 'error') console.log('bridge console', message.text()); });
+  await bridge.addInitScript(() => {
+    const state = { done: false, failed: false, bytes: 0, peers: 0, http: 0, p2p: 0 };
+    Object.assign(window, { mobileProbe: state, NativeSegments: { ready() {}, stats(raw: string) { const value = JSON.parse(raw) as { peers: number; httpDownloaded: number; p2pDownloaded: number }; state.peers = value.peers; state.http = value.httpDownloaded; state.p2p = value.p2pDownloaded; }, complete(_id: string, chunk: string, done: boolean) { state.bytes += atob(chunk).length; state.done = done; }, fallback() { state.failed = true; } } });
+  });
+  const nativeDescriptor = await (await android.request.post(address + '/api/iptv/playback', { data: { kind: 'live', id: '1', client: 'android', transport: 'p2p' } })).json() as Playback;
+  const nativeText = await (await android.request.get(address + nativeDescriptor.url)).text();
+  const target = nativeText.split('\n').filter((line) => line.startsWith('/api/iptv/media/')).at(-3); assert.ok(target);
+  await bridge.goto(address + '/player/android-bridge.html'); await bridge.waitForFunction(() => Boolean(window.HighpassBridge));
+  await bridge.evaluate(({ descriptor, text, base, target }) => { const core: AndroidBridgeApi = window.HighpassBridge; core.init(descriptor, true); core.playlist(base + descriptor.url, text); core.load('mobile', base + target, 0, -1); }, { descriptor: nativeDescriptor, text: nativeText, base: address, target });
+  await bridge.waitForFunction(() => (window as unknown as { mobileProbe: { done: boolean; failed: boolean } }).mobileProbe.done || (window as unknown as { mobileProbe: { failed: boolean } }).mobileProbe.failed, undefined, { timeout: 50000 });
+  const mobile = await bridge.evaluate(() => (window as unknown as { mobileProbe: { done: boolean; failed: boolean; bytes: number; peers: number; http: number; p2p: number } }).mobileProbe);
+  assert.equal(mobile.failed, false, JSON.stringify(mobile)); assert.equal(mobile.done, true); assert.ok(mobile.bytes > 0); assert.equal(mobile.http, 0);
+  await screen.waitForFunction(() => /[2-9] peers/.test(document.querySelector('.traffic-overlay')?.textContent ?? ''), undefined, { timeout: 20000 });
+  console.log(`Mesma conta Web/Android: dois peers conectados, segmento de ${mobile.bytes} bytes recebido sem HTTP`);
+  await android.close(); await p2p.close();
   const blocked = await browser.newContext(); await blocked.request.post(offAddress + '/api/iptv/login', { data: { username: 'alice', password: 'secret-line' } });
   const unavailable = await blocked.newPage(); const forbidden: string[] = [];
   unavailable.on('response', (response) => { if (/video\//.test(response.headers()['content-type'] ?? '')) forbidden.push(response.url()); });

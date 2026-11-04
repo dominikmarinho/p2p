@@ -98,6 +98,7 @@ highpass-p2p-engine/
 │       │   │   ├── browser-seed.ts
 │       │   │   ├── delivery-policy.ts
 │       │   │   ├── native-core.ts
+│       │   │   ├── network-profile.ts
 │       │   │   ├── seed-storage.ts
 │       │   │   ├── stats.ts
 │       │   │   └── telemetry.ts
