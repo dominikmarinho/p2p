@@ -44,7 +44,7 @@ try {
   await page.getByRole('button', { name: '▣ Filmes', exact: true }).click();
   await page.locator('.poster-card > button').first().click();
   await page.waitForFunction(() => (document.querySelector('video')?.readyState ?? 0) >= 2);
-  await page.locator('video').evaluate((video) => { video.currentTime = 12; });
+  await page.locator('video').evaluate((video) => { (video as HTMLVideoElement).currentTime = 12; });
   await page.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) >= 12 && !(document.querySelector('video')?.seeking));
   await page.locator('video').evaluate((video) => video.dispatchEvent(new Event('error')));
   await page.getByText(/Reprodução interrompida. Reconectando/).waitFor();
