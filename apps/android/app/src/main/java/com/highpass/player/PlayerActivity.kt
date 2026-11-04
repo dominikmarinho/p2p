@@ -72,6 +72,8 @@ class PlayerActivity : ComponentActivity() {
     private var recoverFile = false
     private var fullScreen = true
     @Volatile private var stopped = true
+    private var reconnecting = false
+    private var playbackRecovery = PlaybackRecovery()
     private var probing = false
     private var lastProbe = 0L
     private val handler = Handler(Looper.getMainLooper())
@@ -126,24 +128,25 @@ class PlayerActivity : ComponentActivity() {
     }
     override fun onStart() { super.onStart(); if (::playback.isInitialized && player == null && ::token.isInitialized) startStream() }
     private fun startStream() {
-        stopped = false; fallbackUsed = false; recoverFile = false; probing = false; lastProbe = 0; executor = Executors.newSingleThreadExecutor(); loading.visibility = View.VISIBLE; loading.text = "Conectando à transmissão…"; title.text = item.optString("name")
+        stopped = false; reconnecting = false; playbackRecovery.restarted(); fallbackUsed = false; recoverFile = false; probing = false; lastProbe = 0; executor = Executors.newSingleThreadExecutor(); loading.visibility = View.VISIBLE; loading.text = "Conectando à transmissão…"; title.text = item.optString("name")
         status.text = "${if (playback.optBoolean("isLive")) "● AO VIVO" else "SOB DEMANDA"} · Somente ${BuildConfig.TRANSPORT.uppercase()}"
         val enabled = BuildConfig.TRANSPORT == "p2p"
         val transport = if (enabled && playback.optBoolean("isHls")) P2PBridge(this, playback, token, enabled) { raw -> runCatching { updateTraffic(JSONObject(raw)) } } else null; bridge = transport
         val factory: DataSource.Factory = if (transport != null) { videoFrame.addView(transport.webView, FrameLayout.LayoutParams(1, 1)); transport.webView.alpha = .01f; DataSource.Factory { P2PDataSource(transport, token) } } else DefaultHttpDataSource.Factory().setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token")).setConnectTimeoutMs(10000).setReadTimeoutMs(15000)
         val engine = ExoPlayer.Builder(this).setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(factory)).setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(if (enabled) 30000 else 15000, if (enabled) 60000 else 30000, if (enabled) 2500 else 1000, if (enabled) 6000 else 2000).build()).build(); player = engine; playerView.player = engine
         engine.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) { loading.visibility = if (state == Player.STATE_BUFFERING || state == Player.STATE_IDLE) View.VISIBLE else View.GONE; if (state == Player.STATE_READY) status.text = if (fallbackUsed) "HTTP · reprodução direta" else if (playback.optBoolean("isLive")) "● AO VIVO · transmissão em reprodução" else "SOB DEMANDA · reprodução em andamento" }
+            override fun onPlaybackStateChanged(state: Int) { loading.visibility = if (state == Player.STATE_BUFFERING || state == Player.STATE_IDLE) View.VISIBLE else View.GONE; if (state == Player.STATE_ENDED && playback.optBoolean("isLive")) retryPlayback(engine); if (state == Player.STATE_READY) status.text = if (fallbackUsed) "HTTP · reprodução direta" else if (playback.optBoolean("isLive")) "● AO VIVO · transmissão em reprodução" else "SOB DEMANDA · reprodução em andamento" }
             override fun onPlayerError(error: PlaybackException) {
                 val direct = playback.optString("directUrl")
                 if (BuildConfig.TRANSPORT == "http" && !fallbackUsed && direct.isNotEmpty() && direct != playback.optString("url")) { fallbackUsed = true; recoverFile = error.errorCode in 2000..2999; val at = engine.currentPosition; if (playback.optString("sourceFormat") != "m3u8") transport?.httpOnly(); status.text = "HTTP · recuperando conexão"; engine.setMediaItem(MediaItem.fromUri(BuildConfig.ENGINE_URL + direct), at.coerceAtLeast(0)); engine.prepare(); engine.playWhenReady = true }
-                else { loading.text = "${if (BuildConfig.TRANSPORT == "p2p") "Entrega P2P indisponível (sem HTTP)." else "Reprodução HTTP indisponível."}\nPressione OK para tentar novamente ou volte à biblioteca."; loading.visibility = View.VISIBLE; status.text = "Verifique a conexão ou escolha outro conteúdo"; playerView.showController() }
+                else retryPlayback(engine)
             }
         })
         val source = MediaItem.Builder().setUri(Uri.parse(BuildConfig.ENGINE_URL + playback.getString("url"))).setMediaId(playback.getString("swarmId")).apply { if (playback.optBoolean("isHls")) setMimeType(MimeTypes.APPLICATION_M3U8); if (playback.optBoolean("isLive")) setLiveConfiguration(MediaItem.LiveConfiguration.Builder().setMinPlaybackSpeed(.98f).setMaxPlaybackSpeed(1.02f).build()) }.build()
         engine.setMediaItem(source, if (playback.optBoolean("isLive")) C.TIME_UNSET else position.coerceAtLeast(0)); engine.prepare(); engine.playWhenReady = true; playerView.requestFocus(); loadGuide()
         handler.postDelayed(object : Runnable { override fun run() {
             if (stopped || player !== engine) return
+            if (playbackRecovery.observe(engine.currentPosition, engine.playWhenReady, engine.playbackState == Player.STATE_ENDED && !playback.optBoolean("isLive"))) retryPlayback(engine)
             transport?.playhead(engine.currentPosition.coerceAtLeast(0) / 1000.0)
             if (transport == null && playback.optString("statsPath").isNotEmpty()) lifecycleScope.launch { runCatching { updateTraffic(api.json(playback.getString("statsPath").removePrefix("/api/iptv/"))) } }
             if (fallbackUsed && recoverFile && !probing && SystemClock.elapsedRealtime() - lastProbe > 15000) {
@@ -154,6 +157,17 @@ class PlayerActivity : ComponentActivity() {
             }
             handler.postDelayed(this, 3000)
         } }, 3000)
+    }
+    private fun retryPlayback(engine: ExoPlayer) {
+        if (stopped || reconnecting || player !== engine) return
+        reconnecting = true
+        val delay = playbackRecovery.retryDelay()
+        loading.text = "Reprodução interrompida. Reconectando em ${delay / 1000}s…"
+        loading.visibility = View.VISIBLE
+        status.text = "Retomada automática · ${if (BuildConfig.TRANSPORT == "p2p") "somente P2P, sem HTTP" else "HTTP"}"
+        handler.postDelayed({
+            if (!stopped && player === engine) { stopStream(false); startStream() }
+        }, delay)
     }
     private fun placeTraffic() {
         if (!::trafficLine.isInitialized) return
@@ -177,7 +191,7 @@ class PlayerActivity : ComponentActivity() {
     }
     private fun switch(next: JSONObject) {
         if (next.optString("id") == item.optString("id")) { playerView.requestFocus(); return }; switchJob?.cancel(); status.text = "Trocando para ${next.optString("name")}…"
-        switchJob = lifecycleScope.launch { try { val descriptor = api.json("playback", "POST", JSONObject().put("kind", "live").put("id", next.getString("id")).put("client", "android")); stopStream(); item = next; playback = descriptor; position = 0; library.remember(next); intent.putExtra("playback", descriptor.toString()).putExtra("item", item.toString()); startStream() } catch (error: Exception) { if (error is CancellationException) throw error; status.text = error.message ?: "Não foi possível trocar o canal" } }
+        switchJob = lifecycleScope.launch { try { val descriptor = api.json("playback", "POST", JSONObject().put("kind", "live").put("id", next.getString("id")).put("client", "android")); stopStream(); playbackRecovery = PlaybackRecovery(); item = next; playback = descriptor; position = 0; library.remember(next); intent.putExtra("playback", descriptor.toString()).putExtra("item", item.toString()); startStream() } catch (error: Exception) { if (error is CancellationException) throw error; status.text = error.message ?: "Não foi possível trocar o canal" } }
     }
     private fun loadGuide() {
         epgJob?.cancel(); guide.text = if (playback.optBoolean("isLive")) "Consultando guia de programação…" else "Áudio e legendas podem ser selecionados nos controles do player."
@@ -215,7 +229,7 @@ class PlayerActivity : ComponentActivity() {
     }
     private fun stopStream(releaseSeed: Boolean = true) {
         stopped = true; handler.removeCallbacksAndMessages(null); executor?.shutdownNow(); executor = null; epgJob?.cancel()
-        player?.let { engine -> position = engine.currentPosition.coerceAtLeast(0); if (::library.isInitialized && ::item.isInitialized) library.remember(item, if (playback.optBoolean("isLive")) 0 else position) }
+        player?.let { engine -> if (engine.currentPosition > 0 || engine.playbackState == Player.STATE_READY) position = engine.currentPosition.coerceAtLeast(0); if (::library.isInitialized && ::item.isInitialized) library.remember(item, if (playback.optBoolean("isLive")) 0 else position) }
         if (::playerView.isInitialized) playerView.player = null; bridge?.let { videoFrame.removeView(it.webView); it.close(releaseSeed && !isChangingConfigurations) }; bridge = null; player?.release(); player = null
     }
     override fun onSaveInstanceState(outState: Bundle) { if (::playback.isInitialized) { outState.putString("playback", playback.toString()); outState.putString("item", item.toString()); outState.putLong("position", player?.currentPosition ?: position); outState.putBoolean("fullScreen", fullScreen) }; super.onSaveInstanceState(outState) }

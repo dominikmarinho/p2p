@@ -25,6 +25,7 @@ highpass-p2p-engine/
 │   │   │   │   │   │               ├── LoginActivity.kt
 │   │   │   │   │   │               ├── P2PBridge.kt
 │   │   │   │   │   │               ├── P2PDataSource.kt
+│   │   │   │   │   │               ├── PlaybackRecovery.kt
 │   │   │   │   │   │               ├── PlayerActivity.kt
 │   │   │   │   │   │               ├── PlayerTheme.kt
 │   │   │   │   │   │               ├── SegmentBuffer.kt
@@ -49,6 +50,7 @@ highpass-p2p-engine/
 │   │   │   │           └── com/
 │   │   │   │               └── highpass/
 │   │   │   │                   └── player/
+│   │   │   │                       ├── PlaybackRecoveryTest.kt
 │   │   │   │                       ├── SegmentBufferTest.kt
 │   │   │   │                       └── UpdatePolicyTest.kt
 │   │   │   └── build.gradle.kts
@@ -101,6 +103,7 @@ highpass-p2p-engine/
 │       │   │   ├── live-alignment.ts
 │       │   │   ├── native-core.ts
 │       │   │   ├── network-profile.ts
+│       │   │   ├── playback-recovery.ts
 │       │   │   ├── seed-storage.ts
 │       │   │   ├── stats.ts
 │       │   │   └── telemetry.ts
@@ -290,6 +293,7 @@ highpass-p2p-engine/
 │       ├── live-manifest.test.ts
 │       ├── origin-media.test.ts
 │       ├── playback-presence.test.ts
+│       ├── playback-recovery.test.ts
 │       ├── resources.test.ts
 │       ├── security.test.ts
 │       ├── seed-lifecycle.test.ts

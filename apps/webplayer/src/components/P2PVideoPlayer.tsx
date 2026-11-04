@@ -6,6 +6,7 @@ import { absoluteUrl, trackerUrl, type Playback } from '../api';
 import type { CoreEventMap } from 'p2p-media-loader-core';
 import { PlaybackReporter } from '../p2p/telemetry';
 import { DeliveryPolicy } from '../p2p/delivery-policy';
+import { PlaybackRecovery } from '../p2p/playback-recovery';
 import { livePlaybackRate } from '../p2p/live-alignment';
 import { resilientP2P } from '../p2p/network-profile';
 import { initialStats, trackStats, trafficPercentages } from '../p2p/stats';
@@ -23,13 +24,13 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     let restorePosition: (() => void) | undefined; let fileMode = false; let recoverFile = false; let probing = false; let closed = false;
     diagnosticSource.current = () => ({ stats: snapshot(), latency: hls?.latency ?? null, targetLatency: hls?.targetLatency ?? null, segment });
     let segment: DiagnosticSource['segment'];
-    let reconnectTimer: ReturnType<typeof setTimeout> | undefined; let reconnectAttempts = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined; const watchdog = new PlaybackRecovery(); let offline = !navigator.onLine; let resumeAt = 0;
     let updateHttp: (allowed: boolean) => void = () => {};
     const strict = playback.transport === 'p2p';
     const p2pEnabled = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && typeof RTCPeerConnection !== 'undefined' && Hls.isSupported();
     const policy = p2pEnabled && playback.delivery ? new DeliveryPolicy(playback, (allowed) => { updateHttp(allowed); setContingency(allowed); }) : undefined;
     const reporter = new PlaybackReporter(playback, 'web', () => snapshot());
-    const playhead = () => policy?.playhead(element.currentTime); element.addEventListener('timeupdate', playhead);
+    const playhead = () => { if (!reconnectTimer && element.readyState >= 2) resumeAt = element.currentTime; policy?.playhead(element.currentTime); }; element.addEventListener('timeupdate', playhead);
     const serverStats = () => {
       let cancelled = false;
       const timer = setInterval(() => { if (playback.statsPath) void fetch(absoluteUrl(playback.statsPath), { credentials: 'same-origin' }).then(async (response) => {
@@ -38,14 +39,37 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       }).catch(() => undefined); }, 1000);
       snapshot = () => ({ ...carried }); return () => { cancelled = true; clearInterval(timer); };
     };
+    const reconnect = () => {
+      if (closed || reconnectTimer || (element.ended && !playback.isLive)) return;
+      if (element.currentTime > 0) resumeAt = element.currentTime;
+      carried = { ...snapshot(), deliveryMode: 'connecting', peers: 0, downloadRate: 0, uploadRate: 0 }; destroyStats(); snapshot = () => ({ ...carried }); setStats({ ...carried });
+      updateHttp = () => {}; policy?.reset(); hls?.destroy(); hls = undefined;
+      if (restorePosition) { element.removeEventListener('loadedmetadata', restorePosition); restorePosition = undefined; }
+      const delay = watchdog.retryDelay();
+      setError(`Reprodução interrompida. Reconectando em ${delay / 1000}s${strict ? ', sem HTTP para vídeo' : ''}.`);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = undefined; if (closed) return; watchdog.restarted(); const at = resumeAt;
+        if (playback.isHls && Hls.isSupported()) boot(playback.isLive ? -1 : at);
+        else {
+          restorePosition = () => { if (!playback.isLive && at > 0 && Number.isFinite(element.duration)) element.currentTime = Math.min(at, Math.max(0, element.duration - 1)); setError(''); void element.play().catch(() => setError('Pressione reproduzir para continuar.')); };
+          element.addEventListener('loadedmetadata', restorePosition, { once: true }); element.src = absoluteUrl(playback.url); element.load(); destroyStats = serverStats();
+        }
+      }, delay);
+    };
+    const mediaFailure = () => reconnect();
+    const endedLive = () => { if (playback.isLive) reconnect(); };
+    const wentOffline = () => { offline = true; };
+    const cameOnline = () => { const wasOffline = offline; offline = false; if (wasOffline && (!element.ended || playback.isLive) && (!element.paused || element.error || reconnectTimer)) { if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = undefined; reconnect(); } };
+    element.addEventListener('ended', endedLive); element.addEventListener('error', mediaFailure); window.addEventListener('offline', wentOffline); window.addEventListener('online', cameOnline);
     const boot = (position = playback.isLive ? -1 : 0) => {
       if (closed) return;
       if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = undefined;
+      watchdog.restarted();
       fileMode = false; recoverFile = false; setError(''); setNative(!p2pEnabled); policy?.reset(); destroyStats();
       const HlsWithP2P = HlsJsP2PEngine.injectMixin(Hls);
       const instance = new HlsWithP2P({ enableWorker: true, startPosition: position, maxBufferLength: strict ? Math.max(45, playback.config?.bufferSeconds ?? 0) : playback.config?.bufferSeconds ?? 20, backBufferLength: 30, ...(strict ? { liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 8, maxLiveSyncPlaybackRate: 1, fragLoadPolicy: { default: { maxTimeToFirstByteMs: 25000, maxLoadTimeMs: 45000, timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 }, errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 } } } } : {}), p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: p2pEnabled && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, ...resilientP2P, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
       hls = instance; updateHttp = (allowed) => { instance.p2pEngine.applyDynamicConfig({ core: { simultaneousHttpDownloads: allowed ? 1 : 0 } });  };
-      const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') { reconnectAttempts = 0; policy?.recovered(segment.url); } };
+      const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') { policy?.recovered(segment.url); } };
       instance.p2pEngine.addEventListener('onSegmentLoaded', downloaded);
       if (p2pEnabled) { const tracker = trackStats(instance.p2pEngine, setStats, carried); snapshot = tracker.snapshot; destroyStats = () => { tracker.destroy(); instance.p2pEngine.removeEventListener('onSegmentLoaded', downloaded); }; }
       else destroyStats = serverStats();
@@ -64,13 +88,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
           element.addEventListener('loadedmetadata', restorePosition, { once: true }); element.src = absoluteUrl(playback.directUrl); element.load();
         } else if (!strict && data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 2) { policy?.fallback(); instance.startLoad(); }
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries++ < 1) instance.recoverMediaError();
-        else if (strict) {
-          const at = element.currentTime; carried = { ...snapshot(), deliveryMode: 'connecting', peers: 0, downloadRate: 0, uploadRate: 0 }; destroyStats(); snapshot = () => ({ ...carried }); setStats({ ...carried });
-          updateHttp = () => {}; policy?.reset(); instance.destroy(); hls = undefined;
-          const delay = Math.min(30000, 3000 * 2 ** Math.min(reconnectAttempts++, 4));
-          setError(`Entrega P2P interrompida. Reconectando em ${delay / 1000}s, sem utilizar HTTP para vídeo.`);
-          reconnectTimer = setTimeout(() => boot(playback.isLive ? -1 : at), delay);
-        } else { setError('Não foi possível reproduzir. Troque de canal ou entre novamente.'); instance.destroy(); }
+        else reconnect();
       });
       instance.attachMedia(element);
     };
@@ -79,6 +97,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     else if (strict) setError('P2P indisponível neste dispositivo. Use o cliente HTTP ou um dispositivo com WebRTC.');
     else { setNative(true); destroyStats = serverStats(); element.src = absoluteUrl(playback.url); void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); }
     const alignment = setInterval(() => {
+      if (watchdog.observe(element.currentTime, !element.paused && !offline, element.ended && !playback.isLive, element.seeking)) reconnect();
       if (!playback.isLive || !hls || element.paused || element.seeking) return;
       let buffered = 0;
       for (let index = 0; index < element.buffered.length; index++) if (element.buffered.start(index) <= element.currentTime && element.buffered.end(index) >= element.currentTime) buffered = element.buffered.end(index) - element.currentTime;
@@ -91,7 +110,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
         const at = element.currentTime; carried = snapshot(); if (restorePosition) { element.removeEventListener('loadedmetadata', restorePosition); restorePosition = undefined; } boot(at);
       }).catch(() => undefined).finally(() => { probing = false; });
     }, 15000);
-    return () => { reporter.destroy(); closed = true; if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
+    return () => { reporter.destroy(); closed = true; element.removeEventListener('ended', endedLive); element.removeEventListener('error', mediaFailure); window.removeEventListener('offline', wentOffline); window.removeEventListener('online', cameOnline); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
   }, [playback, enabled]);
   const p2pDisplay = Math.round(stats.p2pPercentage * 10) / 10; const httpDisplay = stats.totalDownloaded > 0 ? 100 - p2pDisplay : 0;
   const active = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && !native && typeof RTCPeerConnection !== 'undefined';
@@ -102,7 +121,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     </div>
   );
   return <><section className="video-shell" aria-label={`Reproduzindo ${title}`}>
-    <video ref={video} controls autoPlay playsInline onError={() => setError('Formato ou origem indisponível neste dispositivo.')} />
+    <video ref={video} controls autoPlay playsInline  />
     <div className="video-top"><span className="live-pill">{playback.isLive ? '● AO VIVO' : 'SOB DEMANDA'}</span><span>{title}</span></div>
     {error && <div className="player-message" role="status">{error}</div>}
     {trafficInside && traffic}
