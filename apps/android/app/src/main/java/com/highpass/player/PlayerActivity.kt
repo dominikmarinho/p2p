@@ -46,6 +46,10 @@ class PlayerActivity : ComponentActivity() {
     private var bridge: P2PBridge? = null
     private lateinit var root: LinearLayout
     private lateinit var content: LinearLayout
+    private lateinit var trafficOutside: FrameLayout
+    private lateinit var trafficLine: HorizontalScrollView
+    private lateinit var trafficPositionButton: Button
+    private var trafficInside = false
     private lateinit var layoutButton: Button
     private lateinit var playerView: PlayerView
     private lateinit var videoFrame: FrameLayout
@@ -93,13 +97,17 @@ class PlayerActivity : ComponentActivity() {
         content = PlayerTheme.column(this, 12); root.addView(content, LinearLayout.LayoutParams(0, -1, 1f))
         top = PlayerTheme.row(this); top.addView(PlayerTheme.button(this, "← Voltar") { finish() }, LinearLayout.LayoutParams(dp(96), dp(46)))
         title = PlayerTheme.text(this, item.optString("name"), if (wide) 21f else 16f, bold = true).apply { maxLines = 2; setPadding(dp(14), 0, dp(8), 0) }; top.addView(title, LinearLayout.LayoutParams(0, -2, 1f)); top.addView(PlayerTheme.button(this, "Tela cheia") { toggleFullscreen() }, LinearLayout.LayoutParams(-2, dp(46))); content.addView(top)
+        trafficPositionButton = PlayerTheme.button(this, "Dados: fora") { trafficInside = !trafficInside; getSharedPreferences("highpass-settings", MODE_PRIVATE).edit().putBoolean("traffic-inside", trafficInside).apply(); placeTraffic() }
+        top.addView(trafficPositionButton, LinearLayout.LayoutParams(-2, dp(46)))
         status = PlayerTheme.text(this, "Conectando à transmissão…", 12f, PlayerTheme.accent).apply { setPadding(0, dp(10), 0, dp(12)) }; content.addView(status)
         videoFrame = FrameLayout(this).apply { setBackgroundColor(android.graphics.Color.BLACK); background = PlayerTheme.shape(this@PlayerActivity, android.graphics.Color.BLACK); clipToOutline = true }
         playerView = PlayerView(this).apply { id = View.generateViewId(); useController = true; resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT; setShutterBackgroundColor(android.graphics.Color.BLACK); isFocusable = true; controllerShowTimeoutMs = 5000; setShowSubtitleButton(true); nextFocusLeftId = channelList.id; setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING) }; videoFrame.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         loading = PlayerTheme.text(this, "Preparando reprodução…", 16f, PlayerTheme.muted).apply { gravity = Gravity.CENTER; setBackgroundColor(0x88090F18.toInt()) }; videoFrame.addView(loading, FrameLayout.LayoutParams(-1, -1)); content.addView(videoFrame, LinearLayout.LayoutParams(-1, if (wide) 0 else dp(220), if (wide) 1f else 0f))
-        val trafficLine = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; setBackgroundColor(android.graphics.Color.TRANSPARENT); setPadding(dp(12), dp(10), dp(12), dp(8)); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        trafficInside = getSharedPreferences("highpass-settings", MODE_PRIVATE).getBoolean("traffic-inside", false)
+        trafficOutside = FrameLayout(this).apply { setPadding(dp(12), dp(8), dp(12), dp(8)) }
+        trafficLine = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; setBackgroundColor(android.graphics.Color.TRANSPARENT); setPadding(dp(12), dp(10), dp(12), dp(8)); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         traffic = PlayerTheme.text(this, "Conectando · HTTP 0,0% · P2P 0,0% · 0 peers · ↓ 0 KB/s · ↑ 0 KB/s · 0 MB", if (wide) 12f else 10f, android.graphics.Color.WHITE).apply { setSingleLine(true); setShadowLayer(4f, 0f, 1f, android.graphics.Color.BLACK); contentDescription = "Tráfego de vídeo" }
-        trafficLine.addView(traffic, FrameLayout.LayoutParams(-2, -2)); videoFrame.addView(trafficLine, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        trafficLine.addView(traffic, FrameLayout.LayoutParams(-2, -2)); placeTraffic()
         guideBox = PlayerTheme.column(this, 12); guide = PlayerTheme.text(this, "", 13f, PlayerTheme.muted); guideBox.addView(guide); content.addView(guideBox, LinearLayout.LayoutParams(-1, -2))
         layoutButton = PlayerTheme.button(this, if (playback.optBoolean("isLive")) "☰ Canais" else "Opções") { setFullscreen(false) }.apply {
             id = View.generateViewId(); textSize = 12f; contentDescription = if (playback.optBoolean("isLive")) "Exibir canais e informações" else "Exibir informações de reprodução"
@@ -147,10 +155,21 @@ class PlayerActivity : ComponentActivity() {
             handler.postDelayed(this, 3000)
         } }, 3000)
     }
+    private fun placeTraffic() {
+        if (!::trafficLine.isInitialized) return
+        (trafficLine.parent as? android.view.ViewGroup)?.removeView(trafficLine)
+        (trafficOutside.parent as? android.view.ViewGroup)?.removeView(trafficOutside)
+        (traffic.parent as? android.view.ViewGroup)?.removeView(traffic)
+        traffic.setSingleLine(trafficInside); traffic.maxLines = if (trafficInside) 1 else 3
+        if (trafficInside) { trafficLine.addView(traffic, FrameLayout.LayoutParams(-2, -2)); videoFrame.addView(trafficLine, FrameLayout.LayoutParams(-1, -2, Gravity.TOP)) }
+        else { trafficOutside.addView(traffic, FrameLayout.LayoutParams(-1, -2)); content.addView(trafficOutside, content.indexOfChild(videoFrame) + 1, LinearLayout.LayoutParams(-1, -2)) }
+        trafficPositionButton.text = if (trafficInside) "Dados: no vídeo" else "Dados: fora"
+    }
+    private fun trafficBytes(value: Double): String = when { value >= 1073741824 -> "%.2f GB".format(value / 1073741824); value >= 1048576 -> "%.1f MB".format(value / 1048576); value >= 1024 -> "%.1f KB".format(value / 1024); else -> "${value.toLong()} B" }
     private fun updateTraffic(value: JSONObject) {
         val percentage = (value.optDouble("p2pPercentage", 0.0) * 10).roundToInt() / 10.0; val http = if (value.optDouble("totalDownloaded", 0.0) > 0) 100 - percentage else 0.0
         val mode = if (BuildConfig.TRANSPORT == "http") "HTTP" else when (value.optString("deliveryMode")) { "p2p" -> "P2P ativo"; "http" -> "P2P · aguardando seed"; else -> "P2P · aguardando seed ou peers" }
-        traffic.text = "$mode · HTTP ${"%.1f".format(http)}% · P2P ${"%.1f".format(percentage)}% · ${value.optInt("peers")} peers · ↓ ${value.optDouble("downloadRate").toInt() / 1024} KB/s · ↑ ${value.optDouble("uploadRate").toInt() / 1024} KB/s · ${"%.1f".format(value.optDouble("totalDownloaded") / 1048576)} MB"
+        traffic.text = "$mode · HTTP ${"%.1f".format(http)}% · P2P ${"%.1f".format(percentage)}% · ${value.optInt("peers")} peers · ↓ ${value.optDouble("downloadRate").toInt() / 1024} KB/s · ↑ ${value.optDouble("uploadRate").toInt() / 1024} KB/s · Recebido ${trafficBytes(value.optDouble("totalDownloaded"))} · Enviado ${trafficBytes(value.optDouble("p2pUploaded"))} (${value.optDouble("p2pUploaded").toLong()} bytes)"
         if (player?.playbackState == Player.STATE_READY && !fallbackUsed) status.text = if (mode == "P2P ativo") "● P2P ativo · transmissão em reprodução" else "● Transmissão em reprodução · ${BuildConfig.TRANSPORT.uppercase()}"
     }
     private fun loadChannels() {

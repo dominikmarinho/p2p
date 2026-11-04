@@ -92,7 +92,8 @@ highpass-p2p-engine/
 │       ├── src/
 │       │   ├── components/
 │       │   │   ├── ClientUpdates.tsx
-│       │   │   └── P2PVideoPlayer.tsx
+│       │   │   ├── P2PVideoPlayer.tsx
+│       │   │   └── PlaybackDiagnostics.tsx
 │       │   ├── p2p/
 │       │   │   ├── android-bridge.ts
 │       │   │   ├── browser-seed.ts
@@ -134,6 +135,7 @@ highpass-p2p-engine/
 │   ├── hls-vs-ts-hmac.md
 │   ├── isolated-clients.md
 │   ├── p2p-observability.md
+│   ├── playback-diagnostics.md
 │   ├── production.md
 │   ├── seeds-production.md
 │   ├── smart-tv-production.md
@@ -224,6 +226,7 @@ highpass-p2p-engine/
 │   │   │   ├── iptv.routes.ts
 │   │   │   ├── iptv.service.ts
 │   │   │   ├── origin-media.ts
+│   │   │   ├── playback-diagnostics.ts
 │   │   │   ├── playback-presence.ts
 │   │   │   ├── player-ui.ts
 │   │   │   ├── roku-relay.ts
@@ -259,6 +262,7 @@ highpass-p2p-engine/
 │   │   ├── iptv-browser.ts
 │   │   ├── isolated-transports.ts
 │   │   ├── native-vod-seek.ts
+│   │   ├── playback-diagnostics.ts
 │   │   ├── seed-delivery.ts
 │   │   ├── seed-lifecycle.ts
 │   │   ├── seed-redundancy.ts
@@ -272,6 +276,7 @@ highpass-p2p-engine/
 │   │   ├── hls-signatures.test.ts
 │   │   ├── iptv.test.ts
 │   │   ├── p2p.test.ts
+│   │   ├── playback-diagnostics.test.ts
 │   │   ├── telemetry.test.ts
 │   │   ├── xui-admin.test.ts
 │   │   └── xui-transport.test.ts

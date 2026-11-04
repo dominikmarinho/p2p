@@ -34,6 +34,7 @@ import { PeerManager } from './services/peer-manager.js';
 import { peerRoutes } from './ws/peer.handler.js';
 import { RokuRelay } from './modules/iptv/roku-relay.js';
 import { PlaybackTelemetry } from './modules/iptv/telemetry.js';
+import { PlaybackDiagnostics } from './modules/iptv/playback-diagnostics.js';
 import { SeedManager } from './modules/iptv/seed-manager.js';
 import { VodManager } from './modules/iptv/vod-manager.js';
 import { IptvService } from './modules/iptv/iptv.service.js';
@@ -73,6 +74,7 @@ export function buildApp(env: Environment) {
   }, 5000); originMetrics.unref();
   const telemetry = new PlaybackTelemetry(redis, iptv, metrics);
   const relay = new RokuRelay(iptv);
+  const diagnostics = new PlaybackDiagnostics(redis, iptv);
   const seeds = new SeedManager(iptv, relay, metrics);
   const vod = new VodManager(iptv, relay);
   const tracker = new PrivateTracker(redis, iptv, metrics, admin, (grant) => seeds.detach(grant));
@@ -154,9 +156,9 @@ export function buildApp(env: Environment) {
   app.register((scope, _options, done) => { adminRoutes(scope, admin, new XuiServersController(servers), adminAuth, env, seeds, async () => {
     const start = performance.now(); await redis.ping();
     return { uptime: process.uptime(), memory: process.memoryUsage(), database: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }, redisPingMs: performance.now() - start, upstream: iptv.diagnostics(), players: await telemetry.snapshot(), seeds: seeds.snapshot() };
-  }); done(); }, { prefix: '/api/admin' });
+  }, () => diagnostics.snapshot()); done(); }, { prefix: '/api/admin' });
   app.register((scope, _options, done) => { peerRoutes(scope, redis, new XuiAuthService(db, redis, env, servers, metrics), admin, peers, metrics); done(); });
-  app.register((scope, _options, done) => { iptvRoutes(scope, iptv, relay, seeds); telemetry.routes(scope); done(); }, { prefix: '/api/iptv' });
+  app.register((scope, _options, done) => { iptvRoutes(scope, iptv, relay, seeds); telemetry.routes(scope); diagnostics.routes(scope); done(); }, { prefix: '/api/iptv' });
   app.register((scope, _options, done) => { tracker.routes(scope); done(); });
   return app;
 }

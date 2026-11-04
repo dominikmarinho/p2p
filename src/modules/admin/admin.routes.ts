@@ -9,7 +9,7 @@ import type { XuiServersController } from './xui-servers.controller.js';
 import { configDto, routeDto, uuidParams, whitelistDto, xuiServerDto } from './admin.dto.js';
 import type { SeedManager } from '../iptv/seed-manager.js';
 
-export function adminRoutes(app: FastifyInstance, service: AdminService, xui: XuiServersController, auth: AdminAuthService, env: Environment, seeds: SeedManager, monitoring: () => Promise<unknown>): void {
+export function adminRoutes(app: FastifyInstance, service: AdminService, xui: XuiServersController, auth: AdminAuthService, env: Environment, seeds: SeedManager, monitoring: () => Promise<unknown>, diagnostics: () => Promise<unknown> = () => Promise.resolve([])): void {
   const actors = new WeakMap<object, string>();
   const router = app.withTypeProvider<ZodTypeProvider>();
   router.addHook('onRequest', async (request) => {
@@ -34,6 +34,7 @@ export function adminRoutes(app: FastifyInstance, service: AdminService, xui: Xu
   });
   router.get('/xui-servers', async () => xui.list());
   router.get('/monitoring', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, monitoring);
+  router.get('/playback-diagnostics', async (_request, reply) => { reply.header('Cache-Control', 'no-store'); return diagnostics(); });
   router.get('/seeds', () => seeds.snapshot());
   router.post('/seeds/:swarm/restart', { schema: { params: z.object({ swarm: z.string().regex(/^[a-f0-9]{64}$/) }) } }, async (request) => seeds.restart(request.params.swarm));
   router.post('/xui-servers/:id/test', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } }, schema: { params: uuidParams } }, async (request) => xui.testConnection(request.params.id));

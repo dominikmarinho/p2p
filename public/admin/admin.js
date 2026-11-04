@@ -46,8 +46,13 @@ async function render() {
       content.append(cards, panel); commit(); return;
     }
     if (currentView === 'monitoring') {
-      const data = await api('monitoring'); if (!current()) return; const cards = element('div', undefined, 'cards');
+      const [data, diagnostics] = await Promise.all([api('monitoring'), api('playback-diagnostics')]); if (!current()) return; const cards = element('div', undefined, 'cards');
       for (const [label, value] of [['Memória do processo', `${(data.memory.rss / 1048576).toFixed(0)} MB`], ['Redis · ping', `${data.redisPingMs.toFixed(1)} ms`], ['PostgreSQL · esperando conexão', data.database.waiting], ['Seeds prontos / alocados', `${data.seeds.ready} / ${data.seeds.active}`]]) { const card = element('div', undefined, 'card'); card.append(element('p', label), element('strong', String(value))); cards.append(card); }
+      for (const sample of diagnostics) {
+        const card = element('div', undefined, 'panel'); card.append(element('h2', `Diagnóstico compartilhado · ${sample.code}`), element('p', `Recebido ${sample.at} · ${sample.kind} ${sample.content} · ${sample.peers} peers · ${sample.waiting} eventos de buffer · ${sample.frameStatus}`));
+        if (sample.frame && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(sample.frame)) { const image = element('img'); image.src = sample.frame; image.alt = 'Última imagem compartilhada pelo espectador'; image.width = 320; card.append(image); }
+        const details = { time: sample.time, ready: sample.ready, paused: sample.paused, rate: sample.rate, buffered: sample.buffered, latency: sample.latency, targetLatency: sample.targetLatency, frames: sample.frames, dropped: sample.dropped, http: sample.http, p2p: sample.p2p, upload: sample.upload, segment: sample.segment, events: sample.events }; card.append(element('pre', JSON.stringify(details, null, 2))); content.append(card);
+      }
       const panel = element('div', undefined, 'panel'); panel.append(element('h2', 'Diagnóstico de reprodução e infraestrutura'), element('p', `${data.upstream.pendingMetadata} consulta(s) aguardando a origem. Processo ativo há ${(data.uptime / 3600).toFixed(1)} h; pool PostgreSQL ${data.database.total} conexões, ${data.database.idle} livres.`));
       if (data.upstream.media) {
         const media = data.upstream.media;

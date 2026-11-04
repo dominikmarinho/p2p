@@ -1,3 +1,4 @@
+import { PlaybackDiagnostics, type DiagnosticSource } from './PlaybackDiagnostics';
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { HlsJsP2PEngine } from 'p2p-media-loader-hlsjs';
@@ -13,11 +14,15 @@ export function formatBytes(value: number): string { if (value < 1024) return `$
 
 export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: Playback; title: string; enabled?: boolean }) {
   const video = useRef<HTMLVideoElement>(null); const [stats, setStats] = useState(initialStats); const [error, setError] = useState(''); const [native, setNative] = useState(false); const [contingency, setContingency] = useState(false);
+  const [trafficInside, setTrafficInside] = useState(() => { try { return localStorage.getItem('hp:traffic-position') === 'inside'; } catch { return false; } });
+  const diagnosticSource = useRef<() => DiagnosticSource>(() => ({ stats: initialStats, latency: null, targetLatency: null }));
   useEffect(() => {
     const element = video.current; if (!element) return;
     setStats({ ...initialStats }); setError(''); setNative(false); setContingency(false);
     let hls: Hls | undefined; let destroyStats = () => {}; let carried = { ...initialStats }; let snapshot = () => ({ ...carried });
     let restorePosition: (() => void) | undefined; let fileMode = false; let recoverFile = false; let probing = false; let closed = false;
+    diagnosticSource.current = () => ({ stats: snapshot(), latency: hls?.latency ?? null, targetLatency: hls?.targetLatency ?? null, segment });
+    let segment: DiagnosticSource['segment'];
     let updateHttp: (allowed: boolean) => void = () => {};
     const strict = playback.transport === 'p2p';
     const p2pEnabled = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && typeof RTCPeerConnection !== 'undefined' && Hls.isSupported();
@@ -43,7 +48,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       if (p2pEnabled) { const tracker = trackStats(instance.p2pEngine, setStats, carried); snapshot = tracker.snapshot; destroyStats = () => { tracker.destroy(); instance.p2pEngine.removeEventListener('onSegmentLoaded', downloaded); }; }
       else destroyStats = serverStats();
       instance.on(Hls.Events.FRAG_LOADING, (_event, data) => { if (data.frag.url) { policy?.begin(data.frag.url, data.frag.start); } });
-      instance.on(Hls.Events.FRAG_LOADED, (_event, data) => { if (data.frag.url) policy?.finish(data.frag.url); });
+      instance.on(Hls.Events.FRAG_LOADED, (_event, data) => { segment = Number.isFinite(data.frag.start) && data.frag.start >= 0 && Number.isFinite(data.frag.duration) && data.frag.duration >= 0 ? { sequence: String(data.frag.sn), start: data.frag.start, duration: data.frag.duration, loadMs: Math.max(0, data.frag.stats.loading.end - data.frag.stats.loading.start) } : undefined; if (data.frag.url) policy?.finish(data.frag.url); });
       instance.on(Hls.Events.MEDIA_ATTACHED, () => instance.loadSource(absoluteUrl(playback.url)));
       instance.on(Hls.Events.MANIFEST_PARSED, () => { void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); });
       let networkRetries = 0; let mediaRetries = 0;
@@ -82,13 +87,16 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
   }, [playback, enabled]);
   const p2pDisplay = Math.round(stats.p2pPercentage * 10) / 10; const httpDisplay = stats.totalDownloaded > 0 ? 100 - p2pDisplay : 0;
   const active = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && !native && typeof RTCPeerConnection !== 'undefined';
-  return <section className="video-shell" aria-label={`Reproduzindo ${title}`}>
+  const traffic = (
+    <div className={`traffic-overlay ${trafficInside ? 'traffic-inside' : 'traffic-outside'}`} aria-label="Distribuição do tráfego" data-mode={stats.deliveryMode}>
+      <span className={stats.deliveryMode === 'p2p' ? 'p2p-active' : ''}>● {active ? stats.deliveryMode === 'p2p' ? 'P2P ativo' : stats.deliveryMode === 'http' ? 'HTTP de contingência · buscando P2P' : playback.transport === 'p2p' ? 'P2P · aguardando seed ou peers' : contingency ? 'Conectando · HTTP disponível' : 'Conectando ao P2P' : 'HTTP'}</span>
+      <span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>Recebido {formatBytes(stats.totalDownloaded)}</span><span>Enviado <b data-testid="upload-bytes">{formatBytes(stats.p2pUploaded)}</b> ({Math.round(stats.p2pUploaded).toLocaleString('pt-BR')} bytes)</span>
+    </div>
+  );
+  return <><section className="video-shell" aria-label={`Reproduzindo ${title}`}>
     <video ref={video} controls autoPlay playsInline onError={() => setError('Formato ou origem indisponível neste dispositivo.')} />
     <div className="video-top"><span className="live-pill">{playback.isLive ? '● AO VIVO' : 'SOB DEMANDA'}</span><span>{title}</span></div>
     {error && <div className="player-message" role="status">{error}</div>}
-    <div className="traffic-overlay" aria-label="Distribuição do tráfego" data-mode={stats.deliveryMode}>
-      <span className={stats.deliveryMode === 'p2p' ? 'p2p-active' : ''}>● {active ? stats.deliveryMode === 'p2p' ? 'P2P ativo' : stats.deliveryMode === 'http' ? 'HTTP de contingência · buscando P2P' : playback.transport === 'p2p' ? 'P2P · aguardando seed ou peers' : contingency ? 'Conectando · HTTP disponível' : 'Conectando ao P2P' : 'HTTP'}</span>
-      <span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>{formatBytes(stats.totalDownloaded)}</span>
-    </div>
-  </section>;
+    {trafficInside && traffic}
+  </section>{!trafficInside && traffic}<div className="traffic-settings"><label>Dados de tráfego <select aria-label="Posição dos dados de tráfego" value={trafficInside ? 'inside' : 'outside'} onChange={(event) => { const inside = event.target.value === 'inside'; setTrafficInside(inside); try { localStorage.setItem('hp:traffic-position', inside ? 'inside' : 'outside'); } catch { /* A preferência vale durante esta sessão. */ } }}><option value="outside">Fora do vídeo</option><option value="inside">Dentro do vídeo</option></select></label></div><PlaybackDiagnostics key={playback.url} playback={playback} video={video} source={diagnosticSource} /></>;
 }

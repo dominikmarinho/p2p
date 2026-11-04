@@ -87,11 +87,16 @@ try {
   await page.getByRole('button', { name: '◉ Canais ao vivo', exact: true }).click();
   await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   await page.waitForFunction(() => (document.querySelector('video')?.readyState ?? 0) >= 2);
+  assert.equal(await page.getByLabel('Posição dos dados de tráfego').inputValue(), 'outside');
+  assert.equal(await page.locator('.traffic-overlay').evaluate((bar) => getComputedStyle(bar).position), 'static');
+  await page.getByTestId('upload-bytes').waitFor();
+  await page.getByLabel('Posição dos dados de tráfego').selectOption('inside');
   assert.ok(await page.locator('.traffic-overlay').evaluate((bar) => {
     const style = getComputedStyle(bar); const lines = [...bar.children].map((child) => child.getBoundingClientRect().top);
     const shell = bar.closest('.video-shell')?.getBoundingClientRect();
     return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.whiteSpace === 'nowrap' && Math.max(...lines) - Math.min(...lines) < 2 && Boolean(shell && bar.getBoundingClientRect().top < shell.top + 65);
   }), 'Tráfego em linha única transparente no topo do vídeo');
+  await page.getByLabel('Posição dos dados de tráfego').selectOption('outside');
   await page.screenshot({ path: 'docs/previews/webplayer-live.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -104,6 +109,8 @@ try {
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: 'Atualizar interface agora', exact: true }).click();
   await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).waitFor();
+  await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
+  assert.equal(await page.getByLabel('Posição dos dados de tráfego').inputValue(), 'outside');
   await page.getByRole('button', { name: '♡ Favoritos', exact: true }).click();
   await page.getByRole('heading', { name: 'Highpass Teste Ao Vivo' }).first().waitFor();
   await page.getByRole('button', { name: '◌ Minha conta', exact: true }).click(); await page.getByRole('button', { name: 'Encerrar sessão' }).click();
