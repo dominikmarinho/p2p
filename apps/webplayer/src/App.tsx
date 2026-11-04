@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type Account, type CatalogItem, type ContentKind, type EpgItem, type Episode, type Playback } from './api';
 import { ClientUpdates } from './components/ClientUpdates';
 import { clientTransport, clientLabel } from './transport';
+import { StartupDiagnostics } from './components/StartupDiagnostics';
+import { beginStartupProbe, markStartup, failStartup } from './p2p/startup-probe';
 import { Login } from './Login';
 import { P2PVideoPlayer } from './components/P2PVideoPlayer';
 
@@ -35,6 +37,7 @@ export function App() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [account, view, kind, offset, category, search]);
   async function choose(item: CatalogItem) {
+    const attempt = item.kind === 'series' ? undefined : beginStartupProbe(item.kind, item.id);
     const request = ++selection.current;
     setSelected(item); setError(''); setPlayback(null); setEpisodes([]); setEpg([]);
     try {
@@ -42,15 +45,16 @@ export function App() {
       else {
         const result = await api<Playback>('playback', { method: 'POST', body: JSON.stringify({ kind: item.kind, id: item.id, transport: clientTransport }) });
         if (selection.current !== request) return;
-        setPlayback(result);
+        markStartup(attempt, 'authorization'); setPlayback({ ...result, startupAttempt: attempt });
         if (item.kind === 'live') void api<EpgItem[]>(`epg/${item.id}`).then((data) => { if (selection.current === request) setEpg(data); }).catch(() => { if (selection.current === request) setEpg([]); });
       }
-    } catch (failure) { if (selection.current === request) setError(failure instanceof Error ? failure.message : 'Conteúdo indisponível'); }
+    } catch (failure) { failStartup(attempt, 'authorizationFailed'); if (selection.current === request) setError(failure instanceof Error ? failure.message : 'Conteúdo indisponível'); }
   }
   async function playEpisode(episode: Episode, seriesId: string) {
+    const attempt = beginStartupProbe('episode', episode.id);
     const request = ++selection.current; setError(''); setPlayback(null);
-    try { const result = await api<Playback>('playback', { method: 'POST', body: JSON.stringify({ kind: 'episode', id: episode.id, seriesId, transport: clientTransport }) }); if (selection.current === request) setPlayback(result); }
-    catch (failure) { if (selection.current === request) setError(failure instanceof Error ? failure.message : 'Episódio indisponível'); }
+    try { const result = await api<Playback>('playback', { method: 'POST', body: JSON.stringify({ kind: 'episode', id: episode.id, seriesId, transport: clientTransport }) }); if (selection.current === request) { markStartup(attempt, 'authorization'); setPlayback({ ...result, startupAttempt: attempt }); } }
+    catch (failure) { failStartup(attempt, 'authorizationFailed'); if (selection.current === request) setError(failure instanceof Error ? failure.message : 'Episódio indisponível'); }
   }
   function favorite(item: CatalogItem) {
     if (!account) return;
@@ -66,6 +70,7 @@ export function App() {
   const heading = sections.find((section) => section.id === view)?.label;
   return <div className="app-layout"><aside className="sidebar"><a className="wordmark" href={import.meta.env.BASE_URL}>H<span>HIGH PASS<small>PLAY · {clientLabel}</small></span></a><span className="section-label">SEU ENTRETENIMENTO</span><nav>{sections.map((section) => <button key={section.id} className={view === section.id ? 'active' : ''} onClick={() => navigate(section.id as View)}><span>{section.icon}</span>{section.label}</button>)}</nav><div className="sidebar-bottom"><span className="connection-dot">● Engine conectada</span><small>{account.username}</small><button onClick={() => { void logout(); }}>Sair da conta ↗</button></div></aside>
     <main className="main-content"><header className="topbar"><div><p className="eyebrow">HIGH PASS / SUA BIBLIOTECA</p><h1>{heading}</h1></div><div className="profile-avatar">{account.username.slice(0, 1).toUpperCase()}</div></header>
+      <StartupDiagnostics key={account.accountId} />
       {error && <p className="error" role="alert">{error}</p>}
       {view === 'account' ? <section className="surface account"><span className="section-label">SUA ASSINATURA</span><h2>Olá, {account.username}.</h2><p>Sessão válida até {new Date(account.expiresAt).toLocaleString('pt-BR')}.</p><p>Conexões da linha: {account.maxConnections}</p><p>Os canais e conteúdos disponíveis são definidos pela sua operadora.</p><button className="primary" onClick={() => { void logout(); }}>Encerrar sessão</button></section>
         : view === 'settings' ? <section className="surface"><span className="section-label">DO SEU JEITO</span><h2>Qualidade de conexão</h2><ClientUpdates />{clientTransport ? <p>{clientTransport === 'http' ? 'Cliente somente HTTP. Não cria seeds nem conexões WebRTC.' : 'Cliente somente P2P. Sem fallback HTTP para vídeo. Requer seed ou peers disponíveis.'}</p> : account.p2pRequired ? <p>P2P automático para canais, filmes e séries, com HTTP de contingência e retorno automático após recuperação.</p> : <label className="toggle"><input type="checkbox" checked={p2p} onChange={(event) => { setP2p(event.target.checked); localStorage.setItem('hp:p2p', String(event.target.checked)); }} /> Compartilhar segmentos P2P nos canais ao vivo</label>}<p>Você está no cliente {clientLabel}. <a href="/player/http/">Abrir HTTP</a> · <a href="/player/p2p/">Abrir P2P</a></p><p>Favoritos ficam salvos neste navegador. Senhas e tokens de sessão não ficam no armazenamento local.</p></section>

@@ -1,4 +1,4 @@
-# Diagnóstico visual do WebPlayer — 1.3.2
+# Diagnóstico visual do WebPlayer — 1.3.3
 
 Abaixo do vídeo, **Compartilhar diagnóstico e imagens** inicia uma sessão explícita de até dez minutos. O aviso mostra um código de correlação e o botão passa a **Parar compartilhamento**. Não captura a tela do computador, outras abas ou áudio: somente uma imagem JPEG reduzida do elemento de vídeo a cada cinco segundos. Quando o navegador impede a captura, os dados continuam disponíveis com o estado `blocked`.
 
@@ -19,3 +19,11 @@ WebPlayer e Android exibem tráfego fora do vídeo por padrão. No WebPlayer o s
 O envio confirmado mostra **Diagnóstico recebido**, horário e código. Falhas temporárias são tentadas novamente até três vezes; se um proxy recusar a imagem com HTTP 413, a sessão continua enviando somente os dados. O Nginx reserva limite de 80 KB apenas para `/api/iptv/diagnostics/`; as outras rotas mantêm seus limites.
 
 Os WebPlayers HTTP/P2P e os APKs HTTP/P2P reconectam automaticamente após um erro fatal ou 35 segundos sem avanço do vídeo com espera progressiva de 3 a 30 segundos, conservando os contadores e a posição em conteúdo sob demanda. O cliente P2P não habilita HTTP para vídeo. Pausa manual, navegação e fim de VOD interrompem as tentativas; fim inesperado de transmissão ao vivo permite reconexão. Ao perder todos os peers, o indicador passa a aguardar conexão, mesmo que o histórico tenha 100% dos bytes por P2P.
+
+## Medir desde o clique
+
+No topo da biblioteca, **Compartilhar diagnóstico de abertura** ativa uma sessão de metadados antes de escolher o conteúdo. Aguarde **pronto: clique em um canal**, anote o código e então clique no canal. Essa sessão envia tempos e buffer, sem imagens; continua existindo durante a autorização e em falhas anteriores à criação do player. Trocar o canal inicia outra tentativa e substitui a anterior, mantendo o código da sessão.
+
+O Control Plane, em Monitoramento, mostra tempos cumulativos desde o clique: resposta da autorização, criação do player, playlist, confirmação de seed pronto, conexão do primeiro peer, primeiros dados, primeiro segmento e primeiro frame apresentado. `requestVideoFrameCallback` mede o frame apresentado; onde indisponível, o evento `playing` é identificado como aproximação. Fases paralelas podem chegar em ordem diferente; a confirmação de seed é observada por polling. Tempos não disponíveis permanecem ausentes.
+
+A autorização mede a chamada da API de playback inteira, não separa DNS/TLS, consulta XUI e processamento interno. O envio ocorre a cada cinco segundos, mas os marcos usam o relógio monotônico local no instante do evento. O usuário pode compartilhar o diagnóstico visual existente em separado, caso queira enviar imagens depois que o player aparecer. Parada, encerramento da página, TTL de 60 segundos e limite de dez minutos seguem o mesmo mecanismo de privacidade.

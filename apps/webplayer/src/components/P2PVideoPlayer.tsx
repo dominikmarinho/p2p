@@ -6,6 +6,7 @@ import { absoluteUrl, trackerUrl, type Playback } from '../api';
 import type { CoreEventMap } from 'p2p-media-loader-core';
 import { PlaybackReporter } from '../p2p/telemetry';
 import { DeliveryPolicy } from '../p2p/delivery-policy';
+import { markStartup, failStartup } from '../p2p/startup-probe';
 import { PlaybackRecovery } from '../p2p/playback-recovery';
 import { livePlaybackRate } from '../p2p/live-alignment';
 import { resilientP2P } from '../p2p/network-profile';
@@ -20,6 +21,11 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
   useEffect(() => {
     const element = video.current; if (!element) return;
     setStats({ ...initialStats }); setError(''); setNative(false); setContingency(false);
+    markStartup(playback.startupAttempt, 'playerCreated');
+    let frameCallback: number | undefined;
+    const firstFrame = () => markStartup(playback.startupAttempt, 'firstFrame', 'playing-fallback');
+    if (element.requestVideoFrameCallback) frameCallback = element.requestVideoFrameCallback(() => markStartup(playback.startupAttempt, 'firstFrame', 'video-frame-callback'));
+    else element.addEventListener('playing', firstFrame);
     let hls: Hls | undefined; let destroyStats = () => {}; let carried = { ...initialStats }; let snapshot = () => ({ ...carried });
     let restorePosition: (() => void) | undefined; let fileMode = false; let recoverFile = false; let probing = false; let closed = false;
     diagnosticSource.current = () => ({ stats: snapshot(), latency: hls?.latency ?? null, targetLatency: hls?.targetLatency ?? null, segment });
@@ -71,14 +77,19 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       hls = instance; updateHttp = (allowed) => { instance.p2pEngine.applyDynamicConfig({ core: { simultaneousHttpDownloads: allowed ? 1 : 0 } });  };
       const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') { policy?.recovered(segment.url); } };
       instance.p2pEngine.addEventListener('onSegmentLoaded', downloaded);
-      if (p2pEnabled) { const tracker = trackStats(instance.p2pEngine, setStats, carried); snapshot = tracker.snapshot; destroyStats = () => { tracker.destroy(); instance.p2pEngine.removeEventListener('onSegmentLoaded', downloaded); }; }
+      const peer: CoreEventMap['onPeerConnect'] = () => markStartup(playback.startupAttempt, 'peerConnected');
+      const bytes: CoreEventMap['onChunkDownloaded'] = () => markStartup(playback.startupAttempt, 'firstByte');
+      instance.p2pEngine.addEventListener('onPeerConnect', peer); instance.p2pEngine.addEventListener('onChunkDownloaded', bytes);
+      instance.on(Hls.Events.MANIFEST_LOADED, () => markStartup(playback.startupAttempt, 'manifest'));
+      if (p2pEnabled) { const tracker = trackStats(instance.p2pEngine, setStats, carried); snapshot = tracker.snapshot; destroyStats = () => { tracker.destroy(); instance.p2pEngine.removeEventListener('onPeerConnect', peer); instance.p2pEngine.removeEventListener('onChunkDownloaded', bytes); instance.p2pEngine.removeEventListener('onSegmentLoaded', downloaded); }; }
       else destroyStats = serverStats();
       instance.on(Hls.Events.FRAG_LOADING, (_event, data) => { if (data.frag.url) { policy?.begin(data.frag.url, data.frag.start); } });
-      instance.on(Hls.Events.FRAG_LOADED, (_event, data) => { segment = Number.isFinite(data.frag.start) && data.frag.start >= 0 && Number.isFinite(data.frag.duration) && data.frag.duration >= 0 ? { sequence: String(data.frag.sn), start: data.frag.start, duration: data.frag.duration, loadMs: Math.max(0, data.frag.stats.loading.end - data.frag.stats.loading.start) } : undefined; if (data.frag.url) policy?.finish(data.frag.url); });
+      instance.on(Hls.Events.FRAG_LOADED, (_event, data) => { markStartup(playback.startupAttempt, 'firstSegment'); if (!p2pEnabled && data.frag.stats.loading.first > 0) markStartup(playback.startupAttempt, 'firstByte', undefined, data.frag.stats.loading.first); segment = Number.isFinite(data.frag.start) && data.frag.start >= 0 && Number.isFinite(data.frag.duration) && data.frag.duration >= 0 ? { sequence: String(data.frag.sn), start: data.frag.start, duration: data.frag.duration, loadMs: Math.max(0, data.frag.stats.loading.end - data.frag.stats.loading.start) } : undefined; if (data.frag.url) policy?.finish(data.frag.url); });
       instance.on(Hls.Events.MEDIA_ATTACHED, () => instance.loadSource(absoluteUrl(playback.url)));
       instance.on(Hls.Events.MANIFEST_PARSED, () => { void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); });
       let networkRetries = 0; let mediaRetries = 0;
       instance.on(Hls.Events.ERROR, (_event, data) => {
+        failStartup(playback.startupAttempt, data.details);
         window.dispatchEvent(new CustomEvent('highpass:playback-error', { detail: { type: data.type, code: data.details, fatal: data.fatal } }));
         if (!data.fatal || closed || hls !== instance) return;
         if (!strict && playback.directUrl && playback.directUrl !== playback.url) {
@@ -110,7 +121,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
         const at = element.currentTime; carried = snapshot(); if (restorePosition) { element.removeEventListener('loadedmetadata', restorePosition); restorePosition = undefined; } boot(at);
       }).catch(() => undefined).finally(() => { probing = false; });
     }, 15000);
-    return () => { reporter.destroy(); closed = true; element.removeEventListener('ended', endedLive); element.removeEventListener('error', mediaFailure); window.removeEventListener('offline', wentOffline); window.removeEventListener('online', cameOnline); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
+    return () => { if (frameCallback !== undefined) element.cancelVideoFrameCallback(frameCallback); element.removeEventListener('playing', firstFrame); reporter.destroy(); closed = true; element.removeEventListener('ended', endedLive); element.removeEventListener('error', mediaFailure); window.removeEventListener('offline', wentOffline); window.removeEventListener('online', cameOnline); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
   }, [playback, enabled]);
   const p2pDisplay = Math.round(stats.p2pPercentage * 10) / 10; const httpDisplay = stats.totalDownloaded > 0 ? 100 - p2pDisplay : 0;
   const active = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && !native && typeof RTCPeerConnection !== 'undefined';

@@ -1,3 +1,4 @@
+import { markStartup } from './startup-probe.js';
 import { absoluteUrl, type Playback } from '../api.js';
 
 /** Deadline de entrega por segmento, com circuito HTTP temporário e nova tentativa P2P. */
@@ -40,7 +41,7 @@ export class DeliveryPolicy {
     try {
       const response = await fetch(absoluteUrl(this.playback.delivery.seedPath), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: this.position }), signal: controller.signal });
       if (this.touchController === controller && !this.suspended && !this.closed && response.ok && typeof response.json === 'function') {
-        const value = await response.json() as { state?: string };
+        const value = await response.json() as { state?: string }; if (value.state === 'ready') markStartup(this.playback.startupAttempt, 'seedReady');
         // Warming is a live P2P attempt, not an offline seed. A real delivery
         // deadline, or an explicitly unavailable seed, is required for HTTP.
         if (this.touchController === controller && !this.closed && !this.suspended && value.state === 'unavailable') { this.seedUnavailable = true; if (!this.peerDelivered) this.fallback(); }

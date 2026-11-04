@@ -48,3 +48,19 @@ it('guarda somente a última amostra cifrada e usa expiração curta no Redis', 
     await app.inject({ method: 'DELETE', url: target, headers }); expect(await redis.exists(key)).toBe(0);
   } finally { redis.disconnect(); }
 });
+
+it('inicia antes do grant, isola a sessão de login e aceita somente metadados de abertura', async () => {
+  const target = '/api/iptv/diagnostics/startup/' + randomUUID();
+  const data = { ...payload, frameStatus: 'disabled', startup: { attempt: randomUUID(), clickedAt: new Date().toISOString(), kind: 'live', content: '1', elapsedMs: 1800, marks: { authorization: 1000, firstFrame: 1700 }, frameMethod: 'video-frame-callback' } };
+  expect((await app.inject({ method: 'POST', url: target + '/start' })).statusCode).toBe(401);
+  const activation = await app.inject({ method: 'POST', url: target + '/start', headers }); expect(activation.statusCode).toBe(200); const code = activation.json<{ code: string }>().code;
+  expect((await app.inject({ method: 'POST', url: target, headers, payload: { ...payload, frameStatus: 'disabled' } })).statusCode).toBe(204);
+  expect((await app.inject({ method: 'POST', url: target, headers, payload: data })).statusCode).toBe(204);
+  expect((await app.inject({ method: 'POST', url: target, headers: other, payload: data })).statusCode).toBe(410);
+  await app.inject({ method: 'DELETE', url: target, headers: other });
+  const rows = (await app.inject({ url: '/api/admin/playback-diagnostics', headers: admin })).json<{ code: string; startup: { marks: { firstFrame: number } } }[]>();
+  expect(rows.find((row) => row.code === code)?.startup.marks.firstFrame).toBe(1700);
+  expect((await app.inject({ method: 'POST', url: target, headers, payload: { ...data, frame: 'data:image/jpeg;base64,/9j/' } })).statusCode).toBe(400);
+  expect((await app.inject({ method: 'DELETE', url: target, headers })).statusCode).toBe(204);
+  expect((await app.inject({ method: 'POST', url: target, headers, payload: data })).statusCode).toBe(410);
+});

@@ -95,7 +95,8 @@ highpass-p2p-engine/
 │       │   ├── components/
 │       │   │   ├── ClientUpdates.tsx
 │       │   │   ├── P2PVideoPlayer.tsx
-│       │   │   └── PlaybackDiagnostics.tsx
+│       │   │   ├── PlaybackDiagnostics.tsx
+│       │   │   └── StartupDiagnostics.tsx
 │       │   ├── p2p/
 │       │   │   ├── android-bridge.ts
 │       │   │   ├── browser-seed.ts
@@ -105,6 +106,7 @@ highpass-p2p-engine/
 │       │   │   ├── network-profile.ts
 │       │   │   ├── playback-recovery.ts
 │       │   │   ├── seed-storage.ts
+│       │   │   ├── startup-probe.ts
 │       │   │   ├── stats.ts
 │       │   │   └── telemetry.ts
 │       │   ├── App.tsx
@@ -298,6 +300,7 @@ highpass-p2p-engine/
 │       ├── security.test.ts
 │       ├── seed-lifecycle.test.ts
 │       ├── seed-storage.test.ts
+│       ├── startup-probe.test.ts
 │       ├── telemetry-id.test.ts
 │       ├── traffic.test.ts
 │       └── xui-transport.test.ts
