@@ -169,7 +169,7 @@ class PlayerActivity : ComponentActivity() {
     private fun updateTraffic(value: JSONObject) {
         val percentage = (value.optDouble("p2pPercentage", 0.0) * 10).roundToInt() / 10.0; val http = if (value.optDouble("totalDownloaded", 0.0) > 0) 100 - percentage else 0.0
         val mode = if (BuildConfig.TRANSPORT == "http") "HTTP" else when (value.optString("deliveryMode")) { "p2p" -> "P2P ativo"; "http" -> "P2P · aguardando seed"; else -> "P2P · aguardando seed ou peers" }
-        traffic.text = "$mode · HTTP ${"%.1f".format(http)}% · P2P ${"%.1f".format(percentage)}% · ${value.optInt("peers")} peers · ↓ ${value.optDouble("downloadRate").toInt() / 1024} KB/s · ↑ ${value.optDouble("uploadRate").toInt() / 1024} KB/s · Recebido ${trafficBytes(value.optDouble("totalDownloaded"))} · Enviado ${trafficBytes(value.optDouble("p2pUploaded"))} (${value.optDouble("p2pUploaded").toLong()} bytes)"
+        traffic.text = "$mode · HTTP ${"%.1f".format(http)}% · P2P ${"%.1f".format(percentage)}% · ${value.optInt("peers")} peers · ↓ ${value.optDouble("downloadRate").toInt() / 1024} KB/s · ↑ ${value.optDouble("uploadRate").toInt() / 1024} KB/s · Recebido ${trafficBytes(value.optDouble("totalDownloaded"))} · Enviado ${trafficBytes(value.optDouble("p2pUploaded"))}"
         if (player?.playbackState == Player.STATE_READY && !fallbackUsed) status.text = if (mode == "P2P ativo") "● P2P ativo · transmissão em reprodução" else "● Transmissão em reprodução · ${BuildConfig.TRANSPORT.uppercase()}"
     }
     private fun loadChannels() {

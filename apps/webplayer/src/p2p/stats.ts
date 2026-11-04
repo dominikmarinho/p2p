@@ -12,7 +12,7 @@ type EventSource = Pick<Core | HlsJsP2PEngine, 'addEventListener' | 'removeEvent
 export function trackStats(engine: EventSource, update: (stats: P2PStats) => void, initial: Partial<P2PStats> = {}) {
   const peers = new Set<string>(); const stats = { ...initialStats, ...initial, peers: 0 }; let previousDown = stats.p2pDownloaded; let previousUp = stats.p2pUploaded; let previous = performance.now();
   const connected: CoreEventMap['onPeerConnect'] = (peer) => { peers.add(peer.peerId); };
-  const closed: CoreEventMap['onPeerClose'] = (peer) => { peers.delete(peer.peerId); };
+  const closed: CoreEventMap['onPeerClose'] = (peer) => { peers.delete(peer.peerId); if (!peers.size && stats.deliveryMode === 'p2p') stats.deliveryMode = 'connecting'; };
   const downloaded: CoreEventMap['onChunkDownloaded'] = (bytes, source) => { stats.deliveryMode = source === 'p2p' ? 'p2p' : 'http'; if (source === 'p2p') stats.p2pDownloaded += bytes; else stats.httpDownloaded += bytes; };
   const uploaded: CoreEventMap['onChunkUploaded'] = (bytes) => { stats.p2pUploaded += bytes; };
   engine.addEventListener('onPeerConnect', connected); engine.addEventListener('onPeerClose', closed); engine.addEventListener('onChunkDownloaded', downloaded); engine.addEventListener('onChunkUploaded', uploaded);

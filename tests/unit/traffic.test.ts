@@ -16,8 +16,10 @@ describe('estado atual do transporte', () => {
     const engine = { addEventListener: (name: string, listener: (...args: unknown[]) => void) => listeners.set(name, listener), removeEventListener: (name: string) => listeners.delete(name) };
     let latest = { ...initialStats }; const tracker = trackStats(engine, (value) => { latest = value; });
     listeners.get('onChunkDownloaded')?.(1000, 'http'); vi.advanceTimersByTime(1000); expect(latest.deliveryMode).toBe('http');
-    listeners.get('onChunkDownloaded')?.(500, 'p2p'); vi.advanceTimersByTime(1000);
+    listeners.get('onPeerConnect')?.({ peerId: 'peer-a' }); listeners.get('onChunkDownloaded')?.(500, 'p2p'); vi.advanceTimersByTime(1000);
     expect(latest.deliveryMode).toBe('p2p'); expect(latest.httpDownloaded).toBe(1000); expect(latest.p2pPercentage).toBeCloseTo(100 / 3);
+    listeners.get('onChunkUploaded')?.(2048); vi.advanceTimersByTime(1000); expect(latest.p2pUploaded).toBe(2048);
+    listeners.get('onPeerClose')?.({ peerId: 'peer-a' }); vi.advanceTimersByTime(1000); expect(latest.deliveryMode).toBe('connecting'); expect(latest.p2pUploaded).toBe(2048); expect(latest.p2pDownloaded).toBe(500);
     listeners.get('onChunkDownloaded')?.(200, 'http'); vi.advanceTimersByTime(1000); expect(latest.deliveryMode).toBe('http'); tracker.destroy();
   });
 });

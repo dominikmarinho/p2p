@@ -48,9 +48,15 @@ try {
   const screen = await p2p.newPage(); let downloadedHttpVideo = 0;
   screen.on('response', (response) => { if (/video\//.test(response.headers()['content-type'] ?? '')) downloadedHttpVideo++; });
   screen.on('console', (message) => { if (message.type() === 'error') console.log('browser:', message.text()); }); screen.on('pageerror', (error) => console.log('pageerror:', error.message));
+  let manifestDenied = false;
+  await screen.route('**/api/iptv/media/**', async (route) => {
+    if (!manifestDenied) { manifestDenied = true; await route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"temporary-manifest-denial"}' }); }
+    else await route.continue();
+  });
   await screen.goto(address + '/player/p2p/'); const started = Date.now(); await screen.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   try { await screen.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 1, undefined, { timeout: 35000 }); } catch (error) { console.log('seed state', (await app.inject({ url: '/api/admin/seeds', headers: { 'x-api-key': 'local-admin-key-change-before-production' } })).body); console.log('player', await screen.locator('.video-shell').innerText()); throw error; }
   await screen.waitForFunction(() => Number(document.querySelector('[data-testid="p2p-percentage"]')?.textContent?.replace('%', '')) > 99);
+  assert.ok(manifestDenied, 'Falha fatal de manifesto injetada; reprodução recuperou sem novo clique');
   assert.equal(downloadedHttpVideo, 0); assert.equal(await screen.getByTestId('http-percentage').textContent(), '0.0%');
   console.log(`P2P isolado: primeiro vídeo decodificado em ${Date.now() - started} ms, 100% P2P e zero respostas HTTP de vídeo`);
   // The Android bridge joins the already playing WebPlayer under the same account.

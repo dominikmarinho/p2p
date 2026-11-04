@@ -26,13 +26,27 @@ try {
   const snapshots = async () => (await app.inject({ url: '/api/admin/playback-diagnostics', headers: admin })).json<{ code: string; frame?: string; frameStatus: string; frames: number }[]>();
   assert.equal((await snapshots()).length, 0, 'Nenhuma captura antes da ativação explícita');
   await page.getByRole('button', { name: 'Compartilhar diagnóstico e imagens' }).click();
-  await page.getByText(/Compartilhando diagnóstico e imagens/).waitFor();
+  await page.getByText(/Compartilhando diagnóstico e imagens|Diagnóstico recebido/).waitFor();
   let sample; for (let i = 0; i < 60; i++) { sample = (await snapshots())[0]; if (sample?.frame) break; await page.waitForTimeout(200); }
   assert.ok(sample?.frame?.startsWith('data:image/jpeg;base64,/9j/')); assert.equal(sample?.frameStatus, 'captured'); assert.ok(sample.frames > 0);
+  let rejectedImage = false;
+  await page.route('**/api/iptv/diagnostics/*/*', async (route) => {
+    if (route.request().method() === 'POST' && (route.request().postDataJSON() as { frame?: string } | null)?.frame && !rejectedImage) { rejectedImage = true; await route.fulfill({ status: 413, body: 'Proxy body limit' }); }
+    else await route.continue();
+  });
+  await page.getByText(/imagem bloqueada pelo proxy; enviando dados/).waitFor({ timeout: 15000 });
+  assert.ok(rejectedImage); assert.equal((await snapshots())[0]?.frameStatus, 'blocked');
+  let transient = false;
+  await page.route('**/api/iptv/diagnostics/*/*', async (route) => {
+    if (route.request().method() === 'POST' && !transient) { transient = true; await route.fulfill({ status: 503, body: 'Temporary proxy failure' }); }
+    else await route.continue();
+  });
+  await page.getByText(/Envio interrompido/).waitFor({ timeout: 10000 });
+  await page.getByText(/Diagnóstico recebido/).waitFor({ timeout: 15000 }); assert.ok(transient);
   await page.getByRole('button', { name: 'Parar compartilhamento' }).click();
   for (let i = 0; i < 30 && (await snapshots()).length > 0; i++) await page.waitForTimeout(100);
   assert.equal((await snapshots()).length, 0); await page.waitForTimeout(5500); assert.equal((await snapshots()).length, 0, 'Amostra não pode reaparecer após parar');
-  await page.getByRole('button', { name: 'Compartilhar diagnóstico e imagens' }).click(); await page.getByText(/Compartilhando diagnóstico e imagens/).waitFor();
+  await page.getByRole('button', { name: 'Compartilhar diagnóstico e imagens' }).click(); await page.getByText(/Compartilhando diagnóstico e imagens|Diagnóstico recebido/).waitFor();
   await page.goto('about:blank'); for (let i = 0; i < 30 && (await snapshots()).length > 0; i++) await page.waitForTimeout(100);
   assert.equal((await snapshots()).length, 0); await context.close();
   console.log('Diagnóstico visual aprovado: opt-in, JPEG real de vídeo decodificado, métricas, parada e limpeza ao sair da aba');

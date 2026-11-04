@@ -61,6 +61,12 @@ server {
         proxy_pass http://highpass_api;
         include /etc/nginx/snippets/highpass-proxy.conf;
     }
+    location ^~ /api/iptv/diagnostics/ {
+        client_max_body_size 80k;
+        limit_req zone=highpass_api_limit burst=20 nodelay;
+        proxy_pass http://highpass_api;
+        include /etc/nginx/snippets/highpass-proxy.conf;
+    }
     location ^~ /api/iptv/media/ {
         limit_req zone=highpass_api_limit burst=20 nodelay;
         proxy_pass http://highpass_api;

@@ -23,6 +23,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     let restorePosition: (() => void) | undefined; let fileMode = false; let recoverFile = false; let probing = false; let closed = false;
     diagnosticSource.current = () => ({ stats: snapshot(), latency: hls?.latency ?? null, targetLatency: hls?.targetLatency ?? null, segment });
     let segment: DiagnosticSource['segment'];
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined; let reconnectAttempts = 0;
     let updateHttp: (allowed: boolean) => void = () => {};
     const strict = playback.transport === 'p2p';
     const p2pEnabled = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && typeof RTCPeerConnection !== 'undefined' && Hls.isSupported();
@@ -39,11 +40,12 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     };
     const boot = (position = playback.isLive ? -1 : 0) => {
       if (closed) return;
+      if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = undefined;
       fileMode = false; recoverFile = false; setError(''); setNative(!p2pEnabled); policy?.reset(); destroyStats();
       const HlsWithP2P = HlsJsP2PEngine.injectMixin(Hls);
       const instance = new HlsWithP2P({ enableWorker: true, startPosition: position, maxBufferLength: strict ? Math.max(45, playback.config?.bufferSeconds ?? 0) : playback.config?.bufferSeconds ?? 20, backBufferLength: 30, ...(strict ? { liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 8, maxLiveSyncPlaybackRate: 1, fragLoadPolicy: { default: { maxTimeToFirstByteMs: 25000, maxLoadTimeMs: 45000, timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 }, errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 } } } } : {}), p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: p2pEnabled && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, ...resilientP2P, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
       hls = instance; updateHttp = (allowed) => { instance.p2pEngine.applyDynamicConfig({ core: { simultaneousHttpDownloads: allowed ? 1 : 0 } });  };
-      const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') policy?.recovered(segment.url); };
+      const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment }) => { if (downloadSource === 'p2p') { reconnectAttempts = 0; policy?.recovered(segment.url); } };
       instance.p2pEngine.addEventListener('onSegmentLoaded', downloaded);
       if (p2pEnabled) { const tracker = trackStats(instance.p2pEngine, setStats, carried); snapshot = tracker.snapshot; destroyStats = () => { tracker.destroy(); instance.p2pEngine.removeEventListener('onSegmentLoaded', downloaded); }; }
       else destroyStats = serverStats();
@@ -54,15 +56,21 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       let networkRetries = 0; let mediaRetries = 0;
       instance.on(Hls.Events.ERROR, (_event, data) => {
         window.dispatchEvent(new CustomEvent('highpass:playback-error', { detail: { type: data.type, code: data.details, fatal: data.fatal } }));
-        if (!data.fatal || closed) return;
+        if (!data.fatal || closed || hls !== instance) return;
         if (!strict && playback.directUrl && playback.directUrl !== playback.url) {
           const at = element.currentTime; carried = snapshot(); destroyStats(); updateHttp = () => {}; policy?.reset(); instance.destroy(); hls = undefined;
           fileMode = true; recoverFile = data.type === Hls.ErrorTypes.NETWORK_ERROR; setNative(true); setContingency(true); setError(''); destroyStats = serverStats();
           restorePosition = () => { if (at > 0 && Number.isFinite(element.duration)) element.currentTime = Math.min(at, Math.max(0, element.duration - 1)); setError(''); void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); };
           element.addEventListener('loadedmetadata', restorePosition, { once: true }); element.src = absoluteUrl(playback.directUrl); element.load();
-        } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 2) { policy?.fallback(); instance.startLoad(); }
+        } else if (!strict && data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 2) { policy?.fallback(); instance.startLoad(); }
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries++ < 1) instance.recoverMediaError();
-        else { setError(strict ? 'Entrega P2P indisponível. Verifique o seed ou tente novamente. Este cliente não utiliza HTTP para vídeo.' : 'Não foi possível reproduzir. Troque de canal ou entre novamente.'); instance.destroy(); }
+        else if (strict) {
+          const at = element.currentTime; carried = { ...snapshot(), deliveryMode: 'connecting', peers: 0, downloadRate: 0, uploadRate: 0 }; destroyStats(); snapshot = () => ({ ...carried }); setStats({ ...carried });
+          updateHttp = () => {}; policy?.reset(); instance.destroy(); hls = undefined;
+          const delay = Math.min(30000, 3000 * 2 ** Math.min(reconnectAttempts++, 4));
+          setError(`Entrega P2P interrompida. Reconectando em ${delay / 1000}s, sem utilizar HTTP para vídeo.`);
+          reconnectTimer = setTimeout(() => boot(playback.isLive ? -1 : at), delay);
+        } else { setError('Não foi possível reproduzir. Troque de canal ou entre novamente.'); instance.destroy(); }
       });
       instance.attachMedia(element);
     };
@@ -83,14 +91,14 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
         const at = element.currentTime; carried = snapshot(); if (restorePosition) { element.removeEventListener('loadedmetadata', restorePosition); restorePosition = undefined; } boot(at);
       }).catch(() => undefined).finally(() => { probing = false; });
     }, 15000);
-    return () => { reporter.destroy(); closed = true; clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
+    return () => { reporter.destroy(); closed = true; if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
   }, [playback, enabled]);
   const p2pDisplay = Math.round(stats.p2pPercentage * 10) / 10; const httpDisplay = stats.totalDownloaded > 0 ? 100 - p2pDisplay : 0;
   const active = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && !native && typeof RTCPeerConnection !== 'undefined';
   const traffic = (
     <div className={`traffic-overlay ${trafficInside ? 'traffic-inside' : 'traffic-outside'}`} aria-label="Distribuição do tráfego" data-mode={stats.deliveryMode}>
       <span className={stats.deliveryMode === 'p2p' ? 'p2p-active' : ''}>● {active ? stats.deliveryMode === 'p2p' ? 'P2P ativo' : stats.deliveryMode === 'http' ? 'HTTP de contingência · buscando P2P' : playback.transport === 'p2p' ? 'P2P · aguardando seed ou peers' : contingency ? 'Conectando · HTTP disponível' : 'Conectando ao P2P' : 'HTTP'}</span>
-      <span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>Recebido {formatBytes(stats.totalDownloaded)}</span><span>Enviado <b data-testid="upload-bytes">{formatBytes(stats.p2pUploaded)}</b> ({Math.round(stats.p2pUploaded).toLocaleString('pt-BR')} bytes)</span>
+      <span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>Recebido {formatBytes(stats.totalDownloaded)}</span><span>Enviado <b data-testid="upload-bytes">{formatBytes(stats.p2pUploaded)}</b></span>
     </div>
   );
   return <><section className="video-shell" aria-label={`Reproduzindo ${title}`}>
