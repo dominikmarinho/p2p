@@ -98,7 +98,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
   const traffic = (
     <div className={`traffic-overlay ${trafficInside ? 'traffic-inside' : 'traffic-outside'}`} aria-label="Distribuição do tráfego" data-mode={stats.deliveryMode}>
       <span className={stats.deliveryMode === 'p2p' ? 'p2p-active' : ''}>● {active ? stats.deliveryMode === 'p2p' ? 'P2P ativo' : stats.deliveryMode === 'http' ? 'HTTP de contingência · buscando P2P' : playback.transport === 'p2p' ? 'P2P · aguardando seed ou peers' : contingency ? 'Conectando · HTTP disponível' : 'Conectando ao P2P' : 'HTTP'}</span>
-      <span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>Recebido {formatBytes(stats.totalDownloaded)}</span><span>Enviado <b data-testid="upload-bytes">{formatBytes(stats.p2pUploaded)}</b></span>
+      <span>HTTP <b data-testid="http-percentage">{httpDisplay.toFixed(1)}%</b></span><span>P2P <b data-testid="p2p-percentage">{p2pDisplay.toFixed(1)}%</b></span><span>{stats.peers} peers</span><span>↓ {formatBytes(stats.downloadRate)}/s P2P</span><span>↑ {formatBytes(stats.uploadRate)}/s</span><span>Recebido {formatBytes(stats.totalDownloaded)}</span><span>Enviado <b data-testid="upload-bytes">{stats.p2pUploaded < 1024 ? `${(stats.p2pUploaded / 1024).toFixed(1)} KB` : formatBytes(stats.p2pUploaded)}</b></span>
     </div>
   );
   return <><section className="video-shell" aria-label={`Reproduzindo ${title}`}>

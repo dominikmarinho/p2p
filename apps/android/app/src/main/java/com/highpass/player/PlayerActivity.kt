@@ -165,7 +165,7 @@ class PlayerActivity : ComponentActivity() {
         else { trafficOutside.addView(traffic, FrameLayout.LayoutParams(-1, -2)); content.addView(trafficOutside, content.indexOfChild(videoFrame) + 1, LinearLayout.LayoutParams(-1, -2)) }
         trafficPositionButton.text = if (trafficInside) "Dados: no vídeo" else "Dados: fora"
     }
-    private fun trafficBytes(value: Double): String = when { value >= 1073741824 -> "%.2f GB".format(value / 1073741824); value >= 1048576 -> "%.1f MB".format(value / 1048576); value >= 1024 -> "%.1f KB".format(value / 1024); else -> "${value.toLong()} B" }
+    private fun trafficBytes(value: Double): String = when { value >= 1073741824 -> "%.2f GB".format(value / 1073741824); value >= 1048576 -> "%.1f MB".format(value / 1048576); value >= 1024 -> "%.1f KB".format(value / 1024); else -> "%.1f KB".format(value / 1024) }
     private fun updateTraffic(value: JSONObject) {
         val percentage = (value.optDouble("p2pPercentage", 0.0) * 10).roundToInt() / 10.0; val http = if (value.optDouble("totalDownloaded", 0.0) > 0) 100 - percentage else 0.0
         val mode = if (BuildConfig.TRANSPORT == "http") "HTTP" else when (value.optString("deliveryMode")) { "p2p" -> "P2P ativo"; "http" -> "P2P · aguardando seed"; else -> "P2P · aguardando seed ou peers" }
