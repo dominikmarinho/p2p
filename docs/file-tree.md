@@ -64,6 +64,24 @@ highpass-p2p-engine/
 │   │   ├── gradlew
 │   │   ├── gradlew.bat
 │   │   └── settings.gradle.kts
+│   ├── ios/
+│   │   ├── Highpass/
+│   │   │   ├── Assets.xcassets/
+│   │   │   │   ├── AppIconHTTP.appiconset/
+│   │   │   │   │   ├── Contents.json
+│   │   │   │   │   └── Icon.png
+│   │   │   │   ├── AppIconP2P.appiconset/
+│   │   │   │   │   ├── Contents.json
+│   │   │   │   │   └── Icon.png
+│   │   │   │   └── Contents.json
+│   │   │   ├── HighpassApp.swift
+│   │   │   ├── Info.plist
+│   │   │   ├── PlayerConfiguration.swift
+│   │   │   └── PlayerScreen.swift
+│   │   ├── Tests/
+│   │   │   └── PlayerConfigurationTests.swift
+│   │   ├── README.md
+│   │   └── project.yml
 │   ├── roku/
 │   │   ├── components/
 │   │   │   ├── ApiTask.brs
@@ -91,9 +109,18 @@ highpass-p2p-engine/
 │   │   ├── largeIcon.png
 │   │   └── launch.js
 │   └── webplayer/
+│       ├── public/
+│       │   └── ios/
+│       │       ├── http-180.png
+│       │       ├── http-192.png
+│       │       ├── http-512.png
+│       │       ├── p2p-180.png
+│       │       ├── p2p-192.png
+│       │       └── p2p-512.png
 │       ├── src/
 │       │   ├── components/
 │       │   │   ├── ClientUpdates.tsx
+│       │   │   ├── IosInstall.tsx
 │       │   │   ├── P2PVideoPlayer.tsx
 │       │   │   ├── PlaybackDiagnostics.tsx
 │       │   │   └── StartupDiagnostics.tsx
@@ -186,6 +213,7 @@ highpass-p2p-engine/
 │   ├── build-web.mjs
 │   ├── collect-container-metrics.py
 │   ├── deploy.sh
+│   ├── generate-ios-icons.py
 │   ├── highpass-switch
 │   ├── observability.sh
 │   ├── package-android-release.py

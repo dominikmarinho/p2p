@@ -19,3 +19,8 @@ artifacts/
 
 __pycache__/
 *.pyc
+
+apps/ios/Highpass.xcodeproj/
+apps/ios/DerivedData/
+*.xcarchive/
+*.ipa

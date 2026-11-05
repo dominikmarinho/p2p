@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 export function playerUi(app: FastifyInstance): Promise<void> {
   const root = fileURLToPath(new URL('../../../public/player/', import.meta.url));
   const cache = new Map<string, Buffer>();
-  const types: Record<string, string> = { '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
+  const types: Record<string, string> = { '.webmanifest': 'application/manifest+json; charset=utf-8', '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
   const serve = async (relative: string, reply: FastifyReply) => {
     const path = resolve(root, relative);
     if (!path.startsWith(resolve(root) + sep)) return reply.code(404).send();

@@ -156,3 +156,5 @@ Aplicativos 1.1: [layout, atualização, recuperação P2P e publicação dos AP
 Correção 1.1.1: [reutilização de sessão HLS, prioridade P2P e diagnóstico das conexões](docs/xui-hls-session-reuse.md).
 
 [HLS, MPEG-TS e HMAC: comparação e resultados observados](docs/hls-vs-ts-hmac.md).
+
+Aplicativos para iPhone/iPad: instalação web HTTP/P2P em `/player/` e projetos nativos separados em [apps/ios/README.md](apps/ios/README.md). A distribuição nativa exige assinatura Apple; os artefatos sem assinatura da esteira são de desenvolvimento.

@@ -21,6 +21,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
   const diagnosticSource = useRef<() => DiagnosticSource>(() => ({ stats: initialStats, latency: null, targetLatency: null }));
   useEffect(() => {
     const element = video.current; if (!element) return;
+    element.disableRemotePlayback = playback.transport === 'p2p';
     setStats({ ...initialStats }); setError(''); setNative(false); setContingency(false);
     markStartup(playback.startupAttempt, 'playerCreated');
     let frameCallback: number | undefined;
@@ -38,6 +39,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined; const watchdog = new PlaybackRecovery(); let offline = !navigator.onLine; let resumeAt = 0;
     let updateHttp: (allowed: boolean) => void = () => {};
     const strict = playback.transport === 'p2p';
+    const nativeHttp = playback.transport === 'http' && Boolean(element.canPlayType('application/vnd.apple.mpegurl')) && (/iPad|iPhone|iPod/.test(navigator.userAgent) || navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const p2pEnabled = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && typeof RTCPeerConnection !== 'undefined' && Hls.isSupported();
     const policy = p2pEnabled && playback.delivery ? new DeliveryPolicy(playback, (allowed) => { updateHttp(allowed); setContingency(allowed); }) : undefined;
     const reporter = new PlaybackReporter(playback, 'web', () => snapshot());
@@ -60,7 +62,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       setError(`Reprodução interrompida. Reconectando em ${delay / 1000}s${strict ? ', sem HTTP para vídeo' : ''}.`);
       reconnectTimer = setTimeout(() => {
         reconnectTimer = undefined; if (closed) return; watchdog.restarted(); const at = resumeAt;
-        if (playback.isHls && Hls.isSupported()) boot(playback.isLive ? -1 : at);
+        if (!nativeHttp && playback.isHls && Hls.isSupported()) boot(playback.isLive ? -1 : at);
         else {
           restorePosition = () => { if (!playback.isLive && at > 0 && Number.isFinite(element.duration)) element.currentTime = Math.min(at, Math.max(0, element.duration - 1)); setError(''); void element.play().catch(() => setError('Pressione reproduzir para continuar.')); };
           element.addEventListener('loadedmetadata', restorePosition, { once: true }); element.src = absoluteUrl(playback.url); element.load(); destroyStats = serverStats();
@@ -78,7 +80,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       watchdog.restarted();
       fileMode = false; recoverFile = false; setError(''); setNative(!p2pEnabled); policy?.reset(); destroyStats();
       const HlsWithP2P = HlsJsP2PEngine.injectMixin(Hls);
-      const instance = new HlsWithP2P({ enableWorker: true, startPosition: position, maxBufferLength: strict ? Math.max(45, playback.config?.bufferSeconds ?? 0) : playback.config?.bufferSeconds ?? 20, backBufferLength: 30, ...(strict ? { liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 8, maxLiveSyncPlaybackRate: 1, fragLoadPolicy: { default: { maxTimeToFirstByteMs: 25000, maxLoadTimeMs: 45000, timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 }, errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 } } } } : {}), p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: p2pEnabled && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, ...resilientP2P, simultaneousP2PDownloads: frameShown ? 3 : 1, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
+      const instance = new HlsWithP2P({ enableWorker: true, preferManagedMediaSource: strict, startPosition: position, maxBufferLength: strict ? Math.max(45, playback.config?.bufferSeconds ?? 0) : playback.config?.bufferSeconds ?? 20, backBufferLength: 30, ...(strict ? { liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 8, maxLiveSyncPlaybackRate: 1, fragLoadPolicy: { default: { maxTimeToFirstByteMs: 25000, maxLoadTimeMs: 45000, timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 }, errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 5000 } } } } : {}), p2p: { core: { swarmId: playback.swarmId, announceTrackers: [trackerUrl(playback.trackerPath)], segmentMemoryStorageLimit: 64, p2pMaxPeers: playback.config?.maxConnectionsPerNode ?? 6, webRtcOffersCount: 3, httpDownloadInitialTimeoutMs: p2pEnabled && !playback.delivery ? 1200 : 0, highDemandTimeWindow: 2, httpDownloadTimeWindow: 8, ...resilientP2P, simultaneousP2PDownloads: frameShown ? 3 : 1, simultaneousHttpDownloads: policy && !policy.httpAllowed ? 0 : 1, rtcConfig: { iceServers: playback.iceServers }, isP2PDisabled: !p2pEnabled } } });
       hls = instance; updateHttp = (allowed) => { instance.p2pEngine.applyDynamicConfig({ core: { simultaneousHttpDownloads: allowed ? 1 : 0 } });  };
       const requested = new Map<string, number>(); const transferring = new Map<string, number>();
       const downloaded: CoreEventMap['onSegmentLoaded'] = ({ downloadSource, segment, streamType, bytesLength }) => { if (streamType === 'main' && requested.has(segment.url)) { const now = performance.now(); const loadMs = Math.max(0, now - (requested.get(segment.url) ?? now)); const transferMs = Math.max(0, now - (transferring.get(segment.url) ?? now)); reportStartupSegment(playback.startupAttempt, { bytes: bytesLength, durationSeconds: segment.endTime - segment.startTime, loadMs, transferMs, averageBps: transferMs > 0 ? bytesLength * 1000 / transferMs : 0, source: downloadSource }); } requested.delete(segment.url); transferring.delete(segment.url); if (downloadSource === 'p2p') { policy?.recovered(segment.url); } };
@@ -112,7 +114,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
       instance.attachMedia(element);
     };
     if (strict && !p2pEnabled) setError('P2P indisponível neste dispositivo. Use um navegador com MediaSource e WebRTC.');
-    else if (playback.isHls && Hls.isSupported()) boot();
+    else if (!nativeHttp && playback.isHls && Hls.isSupported()) boot();
     else if (strict) setError('P2P indisponível neste dispositivo. Use o cliente HTTP ou um dispositivo com WebRTC.');
     else { setNative(true); destroyStats = serverStats(); element.src = absoluteUrl(playback.url); void element.play().catch(() => setError('Pressione reproduzir para iniciar.')); }
     const startupAlignment = setInterval(() => {

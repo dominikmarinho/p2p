@@ -27,7 +27,16 @@ try {
   page.on('request', (request) => httpCalls.push(request.url()));
   await page.addInitScript(() => { Object.defineProperty(window, 'RTCPeerConnection', { value: class { constructor() { throw new Error('HTTP client must not create WebRTC'); } } }); });
   await http.request.post(address + '/api/iptv/login', { data: { username: 'alice', password: 'secret-line' } });
-  await page.goto(address + '/player/http/'); await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
+  await page.goto(address + '/player/http/?install=ios');
+  await page.getByRole('heading', { name: 'Instalar Highpass HTTP', exact: true }).waitFor();
+  for (const mode of ['http', 'p2p']) {
+    const response = await http.request.get(address + '/player/' + mode + '/app.webmanifest'); assert.equal(response.status(), 200); assert.match(response.headers()['content-type'] ?? '', /application\/manifest\+json/);
+    const manifest = await response.json() as { id: string; start_url: string; scope: string; display: string; icons: { src: string }[] };
+    assert.equal(manifest.id, '/player/' + mode + '/'); assert.equal(manifest.start_url, manifest.id); assert.equal(manifest.scope, manifest.id); assert.equal(manifest.display, 'standalone');
+    assert.equal((await http.request.get(address + manifest.icons[0]!.src)).status(), 200);
+  }
+  await page.getByRole('button', { name: 'Fechar instruções', exact: true }).click();
+  await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   await page.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 1, undefined, { timeout: 20000 });
   const manifestCalls = () => httpCalls.filter((url) => url.includes('/api/iptv/media/')).length;
   const beforeRetry = manifestCalls();

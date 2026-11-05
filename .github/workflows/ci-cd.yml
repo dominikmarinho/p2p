@@ -130,8 +130,39 @@ jobs:
           name: highpass-android-debug
           path: apps/android/app/build/outputs/apk/*/debug/*.apk
           retention-days: 14
+  ios:
+    needs: lint-typecheck
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Generate native iOS project
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          cd apps/ios
+          xcodegen generate
+      - name: Compile both iOS device variants without distribution signing
+        working-directory: apps/ios
+        run: |
+          for scheme in HighpassHTTP HighpassP2P; do
+            xcodebuild -project Highpass.xcodeproj -scheme "$scheme" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/$scheme-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/$scheme-build.log"; exit 1; }
+          done
+      - name: Test iOS policy and WebKit capabilities in simulator
+        working-directory: apps/ios
+        run: |
+          device=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for devices in d["devices"].values() for x in devices if x["isAvailable"] and "iPhone" in x["name"]))')
+          xcodebuild -project Highpass.xcodeproj -scheme HighpassHTTP -destination "platform=iOS Simulator,id=$device" -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO test > "$RUNNER_TEMP/ios-tests.log" 2>&1 || { tail -n 120 "$RUNNER_TEMP/ios-tests.log"; exit 1; }
+          xcodebuild -project Highpass.xcodeproj -scheme HighpassP2P -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/ios-p2p-simulator.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/ios-p2p-simulator.log"; exit 1; }
+      - name: Package unsigned native builds for development only
+        run: tar -czf "$RUNNER_TEMP/highpass-ios-unsigned-development-only.tar.gz" -C apps/ios/DerivedData/Build/Products/Release-iphoneos HighpassHTTP.app HighpassP2P.app
+      - name: Keep unsigned native builds for development only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: highpass-ios-unsigned-development-only
+          path: ${{ runner.temp }}/highpass-ios-unsigned-development-only.tar.gz
+          retention-days: 7
   build-push:
-    needs: [tests, android]
+    needs: [tests, android, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: read
