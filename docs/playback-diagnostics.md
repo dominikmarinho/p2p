@@ -30,6 +30,6 @@ A autorização mede a chamada da API de playback inteira, não separa DNS/TLS, 
 
 ## Correção de abertura ao vivo — 1.3.4
 
-Antes do primeiro frame, se o playhead estiver em um intervalo vazio e houver ao menos três segundos já em buffer à frente, o WebPlayer alinha uma única vez ao começo desse trecho. A checagem é feita a cada 250 ms e não se aplica a VOD, pausa manual, seek em andamento ou vídeo que já exibiu o primeiro frame. O diagnóstico registra `startupAligned`, quando aplicado. Não habilita HTTP no cliente P2P.
+Antes do primeiro frame, se o playhead estiver em um intervalo vazio e houver ao menos três segundos já em buffer à frente, o WebPlayer alinha uma única vez ao começo desse trecho. Uma busca interna inicial pendente não bloqueia o alinhamento; toque ou teclado no vídeo suspendem esse ajuste por cinco segundos. A checagem é feita a cada 250 ms e não se aplica a VOD, pausa manual, interação recente nos controles do vídeo ou vídeo que já exibiu o primeiro frame. O diagnóstico registra `startupAligned`, quando aplicado. Não habilita HTTP no cliente P2P.
 
 Quando um espectador ao vivo ainda está na posição zero, o seed prioriza a janela de abertura correspondente ao HOLD-BACK de quatro segmentos antes de completar o restante da janela. A carga na origem continua sequencial e mantém cache e deduplicação. O benefício real depende da disponibilidade da origem, conectividade WebRTC e conteúdo recebido.

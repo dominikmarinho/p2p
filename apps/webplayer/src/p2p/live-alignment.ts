@@ -7,8 +7,8 @@ export function livePlaybackRate(latency: number, target: number, buffered: numb
 }
 
 /** Only before the first frame: select real buffered media instead of waiting in an empty gap. */
-export function liveStartupPosition(position: number, ranges: readonly (readonly [number, number])[], firstFrameShown: boolean, seeking: boolean): number | undefined {
-  if (firstFrameShown || seeking || !Number.isFinite(position)) return undefined;
+export function liveStartupPosition(position: number, ranges: readonly (readonly [number, number])[], firstFrameShown: boolean, manualInteraction: boolean): number | undefined {
+  if (firstFrameShown || manualInteraction || !Number.isFinite(position)) return undefined;
   if (ranges.some(([start, end]) => start <= position && end > position)) return undefined;
   const next = ranges.find(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && start > position + .5 && end - start >= 3);
   return next ? next[0] + .05 : undefined;

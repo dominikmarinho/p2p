@@ -10,6 +10,10 @@ describe('abertura ao vivo em buffer real', () => {
   it('corrige o caso observado: playhead 20s e buffer começando em 28,30s', () => {
     expect(liveStartupPosition(20.002, [[28.300223, 40.010647]], false, false)).toBeCloseTo(28.350223);
   });
+  it('alinha antes do primeiro frame mesmo quando a busca interna inicial aguarda dados', () => {
+    const media = { currentTime: 20.042, seeking: true, manuallySeeking: false, buffered: [[28.3682, 70.005314]] as const };
+    expect(liveStartupPosition(media.currentTime, media.buffered, false, media.manuallySeeking)).toBeCloseTo(28.4182);
+  });
   it('não salta quando já existe vídeo na posição ou a reprodução começou', () => {
     expect(liveStartupPosition(30, [[28, 40]], false, false)).toBeUndefined();
     expect(liveStartupPosition(20, [[28, 40]], true, false)).toBeUndefined();

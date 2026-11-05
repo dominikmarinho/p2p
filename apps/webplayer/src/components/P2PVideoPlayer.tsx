@@ -23,7 +23,9 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     setStats({ ...initialStats }); setError(''); setNative(false); setContingency(false);
     markStartup(playback.startupAttempt, 'playerCreated');
     let frameCallback: number | undefined;
-    let frameShown = false; let startupAligned = false;
+    let frameShown = false; let startupAligned = false; let manualInteractionUntil = 0;
+    const manualInteraction = () => { manualInteractionUntil = performance.now() + 5000; };
+    element.addEventListener('pointerdown', manualInteraction); element.addEventListener('keydown', manualInteraction);
     const firstFrame = () => { frameShown = true; markStartup(playback.startupAttempt, 'firstFrame', 'playing-fallback'); };
     if (element.requestVideoFrameCallback) frameCallback = element.requestVideoFrameCallback(() => { frameShown = true; markStartup(playback.startupAttempt, 'firstFrame', 'video-frame-callback'); });
     else element.addEventListener('playing', firstFrame);
@@ -111,7 +113,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
     const startupAlignment = setInterval(() => {
       if (closed || !playback.isLive || !hls || frameShown || startupAligned || element.paused) return;
       const ranges = Array.from({ length: element.buffered.length }, (_, index) => [element.buffered.start(index), element.buffered.end(index)] as const);
-      const position = liveStartupPosition(element.currentTime, ranges, frameShown, element.seeking);
+      const position = liveStartupPosition(element.currentTime, ranges, frameShown, performance.now() < manualInteractionUntil);
       if (position === undefined) return;
       startupAligned = true; element.currentTime = position; markStartup(playback.startupAttempt, 'startupAligned');
     }, 250);
@@ -129,7 +131,7 @@ export function P2PVideoPlayer({ playback, title, enabled = true }: { playback: 
         const at = element.currentTime; carried = snapshot(); if (restorePosition) { element.removeEventListener('loadedmetadata', restorePosition); restorePosition = undefined; } boot(at);
       }).catch(() => undefined).finally(() => { probing = false; });
     }, 15000);
-    return () => { if (frameCallback !== undefined) element.cancelVideoFrameCallback(frameCallback); element.removeEventListener('playing', firstFrame); reporter.destroy(); closed = true; element.removeEventListener('ended', endedLive); element.removeEventListener('error', mediaFailure); window.removeEventListener('offline', wentOffline); window.removeEventListener('online', cameOnline); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(startupAlignment); clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
+    return () => { element.removeEventListener('pointerdown', manualInteraction); element.removeEventListener('keydown', manualInteraction); if (frameCallback !== undefined) element.cancelVideoFrameCallback(frameCallback); element.removeEventListener('playing', firstFrame); reporter.destroy(); closed = true; element.removeEventListener('ended', endedLive); element.removeEventListener('error', mediaFailure); window.removeEventListener('offline', wentOffline); window.removeEventListener('online', cameOnline); if (reconnectTimer) clearTimeout(reconnectTimer); clearInterval(startupAlignment); clearInterval(alignment); element.playbackRate = 1; clearInterval(recovery); element.removeEventListener('timeupdate', playhead); if (restorePosition) element.removeEventListener('loadedmetadata', restorePosition); policy?.destroy(); destroyStats(); hls?.destroy(); element.pause(); element.removeAttribute('src'); element.load(); };
   }, [playback, enabled]);
   const p2pDisplay = Math.round(stats.p2pPercentage * 10) / 10; const httpDisplay = stats.totalDownloaded > 0 ? 100 - p2pDisplay : 0;
   const active = playback.transport !== 'http' && (enabled || Boolean(playback.delivery)) && !native && typeof RTCPeerConnection !== 'undefined';
