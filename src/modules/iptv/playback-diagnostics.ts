@@ -47,7 +47,7 @@ export class PlaybackDiagnostics {
       if (result !== 1) throw new AppError(429, 'DIAGNOSTIC_LIMIT', 'Limite de diagnósticos ativos');
       return { code: id.slice(0, 12), expiresIn: 600 };
     });
-    router.post('/diagnostics/:grant/:client', { bodyLimit: 80000, config: { disableMetrics: true, rateLimit: { max: 18, timeWindow: '1 minute', keyGenerator: (request) => `diagnostic:${(request.params as { grant: string }).grant}` } }, schema: { params, body: sample } }, async (request, reply) => {
+    router.post('/diagnostics/:grant/:client', { bodyLimit: 80000, config: { disableMetrics: true, rateLimit: { max: 18, timeWindow: '1 minute', keyGenerator: (request) => `diagnostic:${digest(clientToken(request))}:${(request.params as { grant: string; client: string }).grant}:${(request.params as { client: string }).client}` } }, schema: { params, body: sample } }, async (request, reply) => {
       const grant = await own(request, request.params.grant); const id = this.key(request.params.grant === 'startup' ? `startup:${grant.sessionHash}` : request.params.grant, request.params.client);
       if (request.params.grant === 'startup' && (request.body.frame || request.body.frameStatus !== 'disabled')) throw new AppError(400, 'STARTUP_METADATA_ONLY', 'Análise de abertura aceita somente dados, sem imagens');
       if (request.body.frame) { const bytes = Buffer.from(request.body.frame.slice(23), 'base64'); if (bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255) throw new AppError(400, 'DIAGNOSTIC_FRAME', 'Imagem JPEG inválida'); }
