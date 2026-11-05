@@ -101,6 +101,7 @@ highpass-p2p-engine/
 │       │   │   ├── android-bridge.ts
 │       │   │   ├── browser-seed.ts
 │       │   │   ├── delivery-policy.ts
+│       │   │   ├── ice-gathering.ts
 │       │   │   ├── live-alignment.ts
 │       │   │   ├── native-core.ts
 │       │   │   ├── network-profile.ts
@@ -291,6 +292,7 @@ highpass-p2p-engine/
 │       ├── browser-seed.test.ts
 │       ├── control-plane.test.ts
 │       ├── delivery-policy.test.ts
+│       ├── ice-gathering.test.ts
 │       ├── live-alignment.test.ts
 │       ├── live-manifest.test.ts
 │       ├── origin-media.test.ts

@@ -33,3 +33,13 @@ A autorização mede a chamada da API de playback inteira, não separa DNS/TLS, 
 Antes do primeiro frame, se o playhead estiver em um intervalo vazio e houver ao menos três segundos já em buffer à frente, o WebPlayer alinha uma única vez ao começo desse trecho. Uma busca interna inicial pendente não bloqueia o alinhamento; toque ou teclado no vídeo suspendem esse ajuste por cinco segundos. A checagem é feita a cada 250 ms e não se aplica a VOD, pausa manual, interação recente nos controles do vídeo ou vídeo que já exibiu o primeiro frame. O diagnóstico registra `startupAligned`, quando aplicado. Não habilita HTTP no cliente P2P.
 
 Quando um espectador ao vivo ainda está na posição zero, o seed prioriza a janela de abertura correspondente ao HOLD-BACK de quatro segmentos antes de completar o restante da janela. A carga na origem continua sequencial e mantém cache e deduplicação. O benefício real depende da disponibilidade da origem, conectividade WebRTC e conteúdo recebido.
+
+## Negociação P2P — 1.3.6
+
+A coleta ICE sem trickle pode concluir após uma janela adicional de 200 ms quando um candidato TURN já foi obtido; sem TURN configurado, um candidato público é suficiente. Não basta obter um candidato local quando TURN está configurado. Se TURN ainda não respondeu, o prazo original de oito segundos é preservado. Conclusão normal, cancelamento e fechamento removem timers e listeners. Essa alteração é aplicada às ofertas e respostas do WebPlayer, ponte Android e workers de seed no build, mantendo a versão fixa da biblioteca e verificações de compatibilidade.
+
+O seed pode anunciar prontidão quando a primeira janela prioritária de três segmentos já está em cache, enquanto completa a janela restante de forma sequencial. Isso permite iniciar a réplica antes do fim de todo o aquecimento, sem abrir mais conexões HTTP concorrentes na origem.
+
+### TURN e reservas de banda
+
+A configuração anterior combinava `max-bps=4194304` e `bps-capacity=67108864`: a reserva de banda por alocação podia esgotar o orçamento com somente 16 alocações, inclusive ofertas ICE ainda sem vídeo. `bps-capacity=0` remove esse limite de reserva antecipada; preserva autenticação temporária, TLS, bloqueios de peers privados, `user-quota=64`, `total-quota=512` e o teto de 4 MiB/s por alocação. Não estabelece um limite agregado de tráfego do servidor; dimensionamento de link continua necessário. `max-allocate-lifetime=300` reduz a retenção de alocações abandonadas; clientes ativos renovam a alocação pelo protocolo TURN.

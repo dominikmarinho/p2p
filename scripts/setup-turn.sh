@@ -47,7 +47,8 @@ conf = f'''listening-port=3478
  user-quota=64
  total-quota=512
  max-bps=4194304
- bps-capacity=67108864
+ bps-capacity=0
+ max-allocate-lifetime=300
  no-cli
  no-tcp-relay
  no-dtls

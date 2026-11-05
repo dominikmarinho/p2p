@@ -81,13 +81,15 @@ export class BrowserSeed {
           if (index >= 0) for (let next = index; next < Math.min(segments.length, index + 3); next++) selected.add(next);
         }
         if (this.playback.isLive) for (let index = Math.max(0, segments.length - 6); index < segments.length; index++) selected.add(index);
+        const opening = [...selected].slice(0, 3);
+        const openingReady = () => { if (opening.length && opening.every((index) => completed.has(index))) this.statusValue.ready = true; };
         for (const index of [...selected].slice(0, 24)) {
           if (this.closed || this.paused) break;
           const segment = segments[index]; if (!segment) continue;
-          if (this.core.hasCachedSeedSegment(uri, segment)) { completed.add(index); this.statusValue.lastSegmentAt = Math.max(this.statusValue.lastSegmentAt, this.core.cachedSeedSegmentStoredAt(uri, segment) ?? 0); continue; }
+          if (this.core.hasCachedSeedSegment(uri, segment)) { completed.add(index); this.statusValue.lastSegmentAt = Math.max(this.statusValue.lastSegmentAt, this.core.cachedSeedSegmentStoredAt(uri, segment) ?? 0); openingReady(); continue; }
           const range = segment.byteRange;
           const bytes = await this.core.load(segment.url, range?.start ?? 0, range ? range.end - range.start + 1 : -1);
-          if (bytes && this.core.hasCachedSeedSegment(uri, segment)) { completed.add(index); this.statusValue.lastSegmentAt = Math.max(this.statusValue.lastSegmentAt, this.core.cachedSeedSegmentStoredAt(uri, segment) ?? 0); this.statusValue.loads++; }
+          if (bytes && this.core.hasCachedSeedSegment(uri, segment)) { completed.add(index); this.statusValue.lastSegmentAt = Math.max(this.statusValue.lastSegmentAt, this.core.cachedSeedSegmentStoredAt(uri, segment) ?? 0); this.statusValue.loads++; openingReady(); }
         }
         if (selected.size > 0 && completed.size === selected.size) loaded = true;
         for (const position of targets) if (completed.has(segments.findIndex((segment) => segment.endTime > position))) warmed.add(position);

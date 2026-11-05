@@ -8,7 +8,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = providers.gradleProperty("clientVersionCode").getOrElse("2").toInt()
-        versionName = providers.gradleProperty("clientVersionName").getOrElse("1.3.5")
+        versionName = providers.gradleProperty("clientVersionName").getOrElse("1.3.6")
         buildConfigField("String", "ENGINE_URL", "\"${providers.gradleProperty("engineUrl").getOrElse("https://p2p.remoto.api.br").trimEnd('/')}\"")
         buildConfigField("String", "XUI_BASE_URL", "\"http://xuione.remoto.api.br\"")
     }

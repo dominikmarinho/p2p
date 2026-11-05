@@ -34,6 +34,13 @@ describe('seed sem repetição de downloads nem sessões por segundo', () => {
     expect(source.load.mock.calls[0]?.[0]).toContain('/segment/43?');
     expect(source.load).toHaveBeenCalledTimes(6);
   });
+  it('anuncia prontidão da janela inicial enquanto completa os segmentos restantes', async () => {
+    const source = fixture(); const original = source.load.getMockImplementation()!; let calls = 0; let release: (() => void) | undefined;
+    source.load.mockImplementation((uri: string) => { if (++calls === 4) return new Promise<ArrayBuffer>((resolve) => { release = () => { void original(uri).then(resolve); }; }); return original(uri); });
+    seed = new BrowserSeed(source.core, playback); await vi.advanceTimersByTimeAsync(1);
+    expect(seed.status().loads).toBe(3); expect(seed.status().ready).toBe(true); expect(source.load).toHaveBeenCalledTimes(4);
+    release?.(); await vi.advanceTimersByTimeAsync(1); expect(seed.status().loads).toBe(6); expect(seed.status().ready).toBe(true);
+  });
   it('não baixa a mesma sequência de novo quando somente o token da URL muda', async () => {
     const source = fixture(); seed = new BrowserSeed(source.core, playback); await vi.advanceTimersByTimeAsync(1);
     source.rotateTicket(); await vi.advanceTimersByTimeAsync(6100);

@@ -24,3 +24,18 @@ if (!coreBefore.includes('highpass-dynamic-queue')) {
   if (!coreBefore.includes(original) || !coreBefore.includes('updateStream(streamRuntimeId, addSegments, removeSegmentIds)')) throw new Error('Revisar compatibilidade da fila de p2p-media-loader-core antes do build');
   writeFileSync(coreTarget, coreBefore.replace(original, original + '\n        // highpass-dynamic-queue\n        for (const streamId of this.streams.keys()) this.updateStream(streamId);'));
 }
+
+// Non-trickle SDP should not wait for an unrelated slow ICE server after TURN is usable.
+const iceTarget = join(dirname(coreTarget), 'webtorrent/webtorrent-client/index.js');
+const iceBefore = readFileSync(iceTarget, 'utf8');
+const iceStart = '_WebTorrentClient_waitForIceGathering = function _WebTorrentClient_waitForIceGathering(pc) {';
+const iceEnd = '}, _WebTorrentClient_waitForConnection = function';
+if (!iceBefore.includes('highpass-useful-ice')) {
+  const start = iceBefore.indexOf(iceStart); const end = iceBefore.indexOf(iceEnd, start);
+  if (start < 0 || end < 0) throw new Error('Revisar compatibilidade da coleta ICE de p2p-media-loader-core antes do build');
+  const replacement = iceStart + '\n    // highpass-useful-ice\n    return waitForUsefulIce(pc, __classPrivateFieldGet(this, _WebTorrentClient_config, "f").iceGatheringTimeout(), __classPrivateFieldGet(this, _WebTorrentClient_destroyAbortController, "f").signal);\n';
+  writeFileSync(iceTarget, 'import { waitForUsefulIce } from "./highpass-ice-gathering.js";\n' + iceBefore.slice(0, start) + replacement + iceBefore.slice(end));
+}
+const { transpileModule, ScriptTarget, ModuleKind } = await import('typescript');
+const iceSource = readFileSync(new URL('../apps/webplayer/src/p2p/ice-gathering.ts', import.meta.url), 'utf8');
+writeFileSync(join(dirname(iceTarget), 'highpass-ice-gathering.js'), transpileModule(iceSource, { compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.ES2022 } }).outputText);
