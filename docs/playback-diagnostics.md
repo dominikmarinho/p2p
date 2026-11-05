@@ -1,4 +1,4 @@
-# Diagnóstico visual do WebPlayer — 1.3.4
+# Diagnóstico visual e de abertura do WebPlayer — 1.3.7
 
 Abaixo do vídeo, **Compartilhar diagnóstico e imagens** inicia uma sessão explícita de até dez minutos. O aviso mostra um código de correlação e o botão passa a **Parar compartilhamento**. Não captura a tela do computador, outras abas ou áudio: somente uma imagem JPEG reduzida do elemento de vídeo a cada cinco segundos. Quando o navegador impede a captura, os dados continuam disponíveis com o estado `blocked`.
 
@@ -43,3 +43,13 @@ O seed pode anunciar prontidão quando a primeira janela prioritária de três s
 ### TURN e reservas de banda
 
 A configuração anterior combinava `max-bps=4194304` e `bps-capacity=67108864`: a reserva de banda por alocação podia esgotar o orçamento com somente 16 alocações, inclusive ofertas ICE ainda sem vídeo. `bps-capacity=0` remove esse limite de reserva antecipada; preserva autenticação temporária, TLS, bloqueios de peers privados, `user-quota=64`, `total-quota=512` e o teto de 4 MiB/s por alocação. Não estabelece um limite agregado de tráfego do servidor; dimensionamento de link continua necessário. `max-allocate-lifetime=300` reduz a retenção de alocações abandonadas; clientes ativos renovam a alocação pelo protocolo TURN.
+
+## Prioridade, métricas e histórico — 1.3.7
+
+O WebPlayer começa com uma transferência P2P por trilha e libera três após o primeiro frame; isso mantém áudio e vídeo independentes sem antecipar múltiplos segmentos na mesma trilha. A ponte Android começa com uma transferência e libera três após entregar o primeiro segmento, preservando a compatibilidade com APKs instalados. HTTP e a carga sequencial da origem nos seeds mantêm suas políticas.
+
+A análise de abertura passa a transmitir contadores reais de HTTP/P2P/upload e taxas do player. A classificação direta/TURN usa o par ICE selecionado em `getStats`, não a mera existência de um candidato relay. Pares ainda não identificados são marcados como indeterminados. Nenhum IP, SDP ou credencial é enviado. O primeiro segmento de vídeo inclui tamanho, duração, tempo desde a solicitação, tempo da tentativa de transferência e taxa efetiva. Para P2P os tempos são medidos por eventos reais do engine, evitando os tempos sintéticos de bandwidth do adaptador HLS; não representam necessariamente só o tempo entre primeiro e último pacote.
+
+A mesma sessão preserva nove tentativas anteriores mais a atual. O histórico contém somente metadados, sem imagens, e aparece no WebPlayer e em Monitoramento. Permanece em memória no navegador e na última amostra cifrada do Redis, com o TTL existente de sessenta segundos renovado a cada envio. A sessão inteira continua limitada a dez minutos; parar, sair da página ou trocar de conta limpa o histórico. Não é um histórico permanente nem continua disponível após encerrar o compartilhamento.
+
+A avaliação de segmentos menores na origem está em [hls-origin-tuning.md](hls-origin-tuning.md).

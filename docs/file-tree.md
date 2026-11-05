@@ -105,6 +105,7 @@ highpass-p2p-engine/
 │       │   │   ├── live-alignment.ts
 │       │   │   ├── native-core.ts
 │       │   │   ├── network-profile.ts
+│       │   │   ├── peer-path.ts
 │       │   │   ├── playback-recovery.ts
 │       │   │   ├── seed-storage.ts
 │       │   │   ├── startup-probe.ts
@@ -138,6 +139,7 @@ highpass-p2p-engine/
 │   ├── client-release-1.1.md
 │   ├── ecosystem.md
 │   ├── file-tree.md
+│   ├── hls-origin-tuning.md
 │   ├── hls-vs-ts-hmac.md
 │   ├── isolated-clients.md
 │   ├── p2p-observability.md
@@ -296,6 +298,7 @@ highpass-p2p-engine/
 │       ├── live-alignment.test.ts
 │       ├── live-manifest.test.ts
 │       ├── origin-media.test.ts
+│       ├── peer-path.test.ts
 │       ├── playback-presence.test.ts
 │       ├── playback-recovery.test.ts
 │       ├── resources.test.ts

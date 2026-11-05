@@ -60,6 +60,12 @@ it('inicia antes do grant, isola a sessão de login e aceita somente metadados d
   await app.inject({ method: 'DELETE', url: target, headers: other });
   const rows = (await app.inject({ url: '/api/admin/playback-diagnostics', headers: admin })).json<{ code: string; startup: { marks: { firstFrame: number } } }[]>();
   expect(rows.find((row) => row.code === code)?.startup.marks.firstFrame).toBe(1700);
+  const history = Array.from({ length: 9 }, () => ({ ...data.startup, attempt: randomUUID() }));
+  const measured = { ...data, history, startup: { ...data.startup, traffic: { httpBytes: 0, p2pBytes: 1000, uploadBytes: 500, peers: 2, downloadBps: 2000, uploadBps: 100, paths: { direct: 1, relay: 1, unknown: 0 } }, firstSegment: { bytes: 1000, durationSeconds: 4, loadMs: 1200, transferMs: 1000, averageBps: 1000, source: 'p2p' } } };
+  expect((await app.inject({ method: 'POST', url: target, headers, payload: measured })).statusCode).toBe(204);
+  const saved = (await app.inject({ url: '/api/admin/playback-diagnostics', headers: admin })).json<{ code: string; history?: unknown[] }[]>(); expect(saved.find((row) => row.code === code)?.history).toHaveLength(9);
+  expect((await app.inject({ method: 'POST', url: target, headers, payload: { ...measured, history: [...history, data.startup] } })).statusCode).toBe(400);
+  expect((await app.inject({ method: 'POST', url: target, headers, payload: { ...measured, history: [{ ...data.startup, frame: 'private-image' }] } })).statusCode).toBe(400);
   expect((await app.inject({ method: 'POST', url: target, headers, payload: { ...data, frame: 'data:image/jpeg;base64,/9j/' } })).statusCode).toBe(400);
   expect((await app.inject({ method: 'DELETE', url: target, headers })).statusCode).toBe(204);
   expect((await app.inject({ method: 'POST', url: target, headers, payload: data })).statusCode).toBe(410);

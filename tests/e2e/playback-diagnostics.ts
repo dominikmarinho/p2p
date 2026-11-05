@@ -23,7 +23,7 @@ try {
   const page = await context.newPage(); await page.goto(address + '/player/http/'); await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   await page.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 0);
   const admin = { 'x-api-key': 'local-admin-key-change-before-production' };
-  const snapshots = async () => (await app.inject({ url: '/api/admin/playback-diagnostics', headers: admin })).json<{ code: string; frame?: string; frameStatus: string; frames: number; startup?: { attempt: string; error?: string; marks: { authorization?: number; firstFrame?: number } } }[]>();
+  const snapshots = async () => (await app.inject({ url: '/api/admin/playback-diagnostics', headers: admin })).json<{ code: string; frame?: string; frameStatus: string; frames: number; history?: { attempt: string }[]; startup?: { attempt: string; error?: string; traffic?: { httpBytes: number; p2pBytes: number; uploadBytes: number }; firstSegment?: { bytes: number; durationSeconds: number; loadMs: number }; marks: { authorization?: number; firstFrame?: number } } }[]>();
   assert.equal((await snapshots()).length, 0, 'Nenhuma captura antes da ativação explícita');
   await page.getByRole('button', { name: 'Compartilhar diagnóstico e imagens' }).click();
   await page.getByText(/Compartilhando diagnóstico e imagens|Diagnóstico recebido/).waitFor();
@@ -58,12 +58,12 @@ try {
   await page.route('**/api/iptv/playback', async (route) => { await page.waitForTimeout(1000); await route.continue(); });
   await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   let opened; for (let i = 0; i < 100; i++) { opened = (await snapshots()).find((row) => row.code === startupCode); if (opened?.startup?.marks.firstFrame !== undefined) break; await page.waitForTimeout(200); }
-  assert.ok(opened?.startup?.marks.firstFrame !== undefined); assert.ok(opened.startup.marks.firstFrame >= 1000); assert.ok((opened.startup.marks.authorization ?? 0) >= 900); assert.equal(opened.frame, undefined);
+  assert.ok(opened?.startup?.marks.firstFrame !== undefined); assert.ok(opened.startup.marks.firstFrame >= 1000); assert.ok((opened.startup.marks.authorization ?? 0) >= 900); assert.equal(opened.frame, undefined); assert.ok((opened.startup.firstSegment?.bytes ?? 0) > 0); assert.ok((opened.startup.traffic?.httpBytes ?? 0) > 0); assert.equal(opened.startup.traffic?.p2pBytes, 0);
   const attempt = opened.startup.attempt;
   await page.route('**/api/iptv/playback', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"Temporary test failure"}' }));
   await page.getByRole('button', { name: /Highpass Teste Ao Vivo/ }).click();
   let failed; for (let i = 0; i < 60; i++) { failed = (await snapshots()).find((row) => row.code === startupCode); if (failed?.startup?.error) break; await page.waitForTimeout(200); }
-  assert.equal(failed?.startup?.error, 'authorizationFailed'); assert.notEqual(failed?.startup?.attempt, attempt); assert.equal(failed?.startup?.marks.firstFrame, undefined);
+  assert.equal(failed?.startup?.error, 'authorizationFailed'); assert.notEqual(failed?.startup?.attempt, attempt); assert.ok(failed?.history?.some((row) => row.attempt === attempt), 'A troca anterior permanece no histórico da sessão'); assert.equal(failed?.startup?.marks.firstFrame, undefined);
   await page.getByRole('button', { name: 'Parar análise de abertura', exact: true }).click();
   for (let i = 0; i < 30 && (await snapshots()).some((row) => row.code === startupCode); i++) await page.waitForTimeout(100);
   assert.equal((await snapshots()).some((row) => row.code === startupCode), false); await context.close();

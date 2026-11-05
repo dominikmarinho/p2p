@@ -39,3 +39,13 @@ if (!iceBefore.includes('highpass-useful-ice')) {
 const { transpileModule, ScriptTarget, ModuleKind } = await import('typescript');
 const iceSource = readFileSync(new URL('../apps/webplayer/src/p2p/ice-gathering.ts', import.meta.url), 'utf8');
 writeFileSync(join(dirname(iceTarget), 'highpass-ice-gathering.js'), transpileModule(iceSource, { compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.ES2022 } }).outputText);
+
+// Classify the selected ICE pair without exposing IPs or SDP to diagnostics.
+const pathBefore = readFileSync(iceTarget, 'utf8');
+if (!pathBefore.includes('highpass-peer-path')) {
+  const original = ['connection: pc,\n                channel,', 'connection: pending.connection,\n                channel,'];
+  if (!original.every((text) => pathBefore.includes(text))) throw new Error('Revisar compatibilidade da classificação do caminho ICE');
+  writeFileSync(iceTarget, '// highpass-peer-path\nimport { observePeerPath } from "./highpass-peer-path.js";\n' + pathBefore.replace(original[0], 'connection: observePeerPath(pc),\n                channel,').replace(original[1], 'connection: observePeerPath(pending.connection),\n                channel,'));
+}
+const pathSource = readFileSync(new URL('../apps/webplayer/src/p2p/peer-path.ts', import.meta.url), 'utf8');
+writeFileSync(join(dirname(iceTarget), 'highpass-peer-path.js'), transpileModule(pathSource, { compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.ES2022 } }).outputText);

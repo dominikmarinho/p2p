@@ -10,3 +10,5 @@
 .diagnostic-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;color:#adbacd;font-size:12px}.diagnostic-controls button{flex-shrink:0}.diagnostic-controls span{max-width:680px}
 
 .traffic-overlay.traffic-outside{position:static;display:flex;flex-wrap:wrap;white-space:normal;gap:8px 18px;padding:12px 14px;margin-top:8px;background:#101a27;border:1px solid #273548;border-radius:10px;color:#dfe9f5;font-size:12px;text-shadow:none;overflow:visible}.traffic-settings{margin-top:8px;display:flex;justify-content:flex-end}.traffic-settings label{display:flex;align-items:center;gap:10px;color:#adbacd;font-size:12px}.traffic-settings select{padding:7px 10px;border-radius:8px;background:#101a27;color:#dfe9f5;border:1px solid #273548}
+
+.diagnostic-controls details{flex-basis:100%;overflow-x:auto}.diagnostic-controls table{border-collapse:collapse;min-width:460px;width:100%;margin-top:10px}.diagnostic-controls th,.diagnostic-controls td{padding:8px;text-align:left;border-bottom:1px solid #273548}
