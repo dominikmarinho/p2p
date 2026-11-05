@@ -55,7 +55,7 @@ async function render() {
           if (!probe) card.append(element('p', 'Análise ativada antes do clique; aguardando seleção de conteúdo.'));
           else {
             card.append(element('p', `Tentativa ${probe.attempt} · clique ${probe.clickedAt} · ${probe.kind} ${probe.content}${probe.error ? ' · evento: ' + probe.error : ''}`));
-            for (const [key, label] of [['authorization', 'Autorização da API'], ['playerCreated', 'Criação do player'], ['manifest', 'Playlist recebida'], ['seedReady', 'Seed pronto (confirmação)'], ['peerConnected', 'Primeiro peer conectado'], ['firstByte', 'Primeiros dados'], ['firstSegment', 'Primeiro segmento completo'], ['firstFrame', 'Primeiro frame exibido']]) card.append(element('p', `${label}: ${probe.marks[key] === undefined ? 'aguardando' : (probe.marks[key] / 1000).toFixed(3) + ' s desde o clique'}`));
+            for (const [key, label] of [['authorization', 'Autorização da API'], ['playerCreated', 'Criação do player'], ['manifest', 'Playlist recebida'], ['seedReady', 'Seed pronto (confirmação)'], ['peerConnected', 'Primeiro peer conectado'], ['firstByte', 'Primeiros dados'], ['firstSegment', 'Primeiro segmento completo'], ['startupAligned', 'Alinhamento ao primeiro trecho em buffer'], ['firstFrame', 'Primeiro frame exibido']]) card.append(element('p', `${label}: ${probe.marks[key] === undefined ? 'aguardando' : (probe.marks[key] / 1000).toFixed(3) + ' s desde o clique'}`));
             if (probe.marks.firstFrame === undefined) card.append(element('p', `Ainda sem primeiro frame após ${(probe.elapsedMs / 1000).toFixed(1)} s.`));
           }
         }

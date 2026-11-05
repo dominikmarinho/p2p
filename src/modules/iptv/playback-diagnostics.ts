@@ -9,7 +9,7 @@ import { AppError } from '../../lib/errors.js';
 
 const number = z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER);
 const sample = z.object({
-  startup: z.object({ attempt: z.uuid(), clickedAt: z.iso.datetime(), kind: z.enum(['live', 'movie', 'episode']), content: z.string().regex(/^[0-9]{1,20}$/), elapsedMs: number, marks: z.object({ authorization: number.optional(), playerCreated: number.optional(), manifest: number.optional(), seedReady: number.optional(), peerConnected: number.optional(), firstByte: number.optional(), firstSegment: number.optional(), firstFrame: number.optional() }).strict(), error: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).optional(), frameMethod: z.enum(['video-frame-callback', 'playing-fallback']).optional() }).strict().optional(),
+  startup: z.object({ attempt: z.uuid(), clickedAt: z.iso.datetime(), kind: z.enum(['live', 'movie', 'episode']), content: z.string().regex(/^[0-9]{1,20}$/), elapsedMs: number, marks: z.object({ startupAligned: number.optional(), authorization: number.optional(), playerCreated: number.optional(), manifest: number.optional(), seedReady: number.optional(), peerConnected: number.optional(), firstByte: number.optional(), firstSegment: number.optional(), firstFrame: number.optional() }).strict(), error: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).optional(), frameMethod: z.enum(['video-frame-callback', 'playing-fallback']).optional() }).strict().optional(),
   time: number, ready: z.number().int().min(0).max(4), paused: z.boolean(), rate: z.number().finite().min(0).max(16),
   buffered: z.array(z.tuple([number, number])).max(16), width: number, height: number, frames: number, dropped: number,
   peers: z.number().int().min(0).max(1000), http: number, p2p: number, upload: number,

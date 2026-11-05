@@ -68,6 +68,14 @@ export class BrowserSeed {
         const snapshot = uri === root ? rootSnapshot : await this.manifest(uri);
         this.freshnessMs = Math.max(15000, snapshot.targetMs * 3);
         const segments = this.core.seedSegments(uri); const selected = new Set<number>(); const targets = this.targetsForCycle(); const completed = new Set<number>();
+        // A new live viewer starts around HOLD-BACK, not at the oldest segment.
+        // Fetch this opening window first while retaining one sequential origin loader.
+        if (this.playback.isLive && targets.some((position) => position <= 0)) {
+          const edge = segments.at(-1)?.endTime ?? 0;
+          const start = Math.max(0, edge - snapshot.targetMs / 1000 * 4);
+          const index = segments.findIndex((segment) => segment.endTime > start);
+          if (index >= 0) for (let next = index; next < Math.min(segments.length, index + 3); next++) selected.add(next);
+        }
         for (const position of targets) {
           const index = segments.findIndex((segment) => segment.endTime > position);
           if (index >= 0) for (let next = index; next < Math.min(segments.length, index + 3); next++) selected.add(next);

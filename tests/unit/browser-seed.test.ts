@@ -29,6 +29,11 @@ describe('seed sem repetição de downloads nem sessões por segundo', () => {
     expect(source.fetcher).toHaveBeenCalledTimes(2); expect(source.load).toHaveBeenCalledTimes(7); expect(seed.status().loads).toBe(7);
     seed.targets([]); await vi.advanceTimersByTimeAsync(15000); expect(source.fetcher).toHaveBeenCalledTimes(2); expect(seed.status().ready).toBe(false);
   });
+  it('prioriza a janela de abertura do ao vivo sem downloads adicionais ou paralelos', async () => {
+    const source = fixture(); seed = new BrowserSeed(source.core, playback); await vi.advanceTimersByTimeAsync(1);
+    expect(source.load.mock.calls[0]?.[0]).toContain('/segment/43?');
+    expect(source.load).toHaveBeenCalledTimes(6);
+  });
   it('não baixa a mesma sequência de novo quando somente o token da URL muda', async () => {
     const source = fixture(); seed = new BrowserSeed(source.core, playback); await vi.advanceTimersByTimeAsync(1);
     source.rotateTicket(); await vi.advanceTimersByTimeAsync(6100);

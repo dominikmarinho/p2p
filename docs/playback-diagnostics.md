@@ -1,4 +1,4 @@
-# Diagnóstico visual do WebPlayer — 1.3.3
+# Diagnóstico visual do WebPlayer — 1.3.4
 
 Abaixo do vídeo, **Compartilhar diagnóstico e imagens** inicia uma sessão explícita de até dez minutos. O aviso mostra um código de correlação e o botão passa a **Parar compartilhamento**. Não captura a tela do computador, outras abas ou áudio: somente uma imagem JPEG reduzida do elemento de vídeo a cada cinco segundos. Quando o navegador impede a captura, os dados continuam disponíveis com o estado `blocked`.
 
@@ -27,3 +27,9 @@ No topo da biblioteca, **Compartilhar diagnóstico de abertura** ativa uma sess�
 O Control Plane, em Monitoramento, mostra tempos cumulativos desde o clique: resposta da autorização, criação do player, playlist, confirmação de seed pronto, conexão do primeiro peer, primeiros dados, primeiro segmento e primeiro frame apresentado. `requestVideoFrameCallback` mede o frame apresentado; onde indisponível, o evento `playing` é identificado como aproximação. Fases paralelas podem chegar em ordem diferente; a confirmação de seed é observada por polling. Tempos não disponíveis permanecem ausentes.
 
 A autorização mede a chamada da API de playback inteira, não separa DNS/TLS, consulta XUI e processamento interno. O envio ocorre a cada cinco segundos, mas os marcos usam o relógio monotônico local no instante do evento. O usuário pode compartilhar o diagnóstico visual existente em separado, caso queira enviar imagens depois que o player aparecer. Parada, encerramento da página, TTL de 60 segundos e limite de dez minutos seguem o mesmo mecanismo de privacidade.
+
+## Correção de abertura ao vivo — 1.3.4
+
+Antes do primeiro frame, se o playhead estiver em um intervalo vazio e houver ao menos três segundos já em buffer à frente, o WebPlayer alinha uma única vez ao começo desse trecho. A checagem é feita a cada 250 ms e não se aplica a VOD, pausa manual, seek em andamento ou vídeo que já exibiu o primeiro frame. O diagnóstico registra `startupAligned`, quando aplicado. Não habilita HTTP no cliente P2P.
+
+Quando um espectador ao vivo ainda está na posição zero, o seed prioriza a janela de abertura correspondente ao HOLD-BACK de quatro segmentos antes de completar o restante da janela. A carga na origem continua sequencial e mantém cache e deduplicação. O benefício real depende da disponibilidade da origem, conectividade WebRTC e conteúdo recebido.

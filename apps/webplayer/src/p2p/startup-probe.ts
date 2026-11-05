@@ -1,5 +1,5 @@
 import { telemetryId } from './telemetry.js';
-export type StartupMark = 'authorization' | 'playerCreated' | 'manifest' | 'seedReady' | 'peerConnected' | 'firstByte' | 'firstSegment' | 'firstFrame';
+export type StartupMark = 'startupAligned' | 'authorization' | 'playerCreated' | 'manifest' | 'seedReady' | 'peerConnected' | 'firstByte' | 'firstSegment' | 'firstFrame';
 export interface StartupSample { attempt: string; clickedAt: string; kind: 'live' | 'movie' | 'episode'; content: string; elapsedMs: number; marks: Partial<Record<StartupMark, number>>; error?: string; frameMethod?: 'video-frame-callback' | 'playing-fallback' }
 let armed = false; let current: (StartupSample & { beginning: number }) | undefined;
 export function armStartupProbe(active: boolean) { armed = active; current = undefined; }
